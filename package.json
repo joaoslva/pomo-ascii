@@ -3,6 +3,11 @@
   "version": "0.1.0",
   "description": "An ASCII pomodoro timer that runs in your terminal. Clickable, colourful, zero dependencies.",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/joaoslva/pomo-ascii.git"
+  },
+  "homepage": "https://github.com/joaoslva/pomo-ascii#readme",
   "bin": {
     "pomo": "./dist/cli.js"
   },

@@ -1,7 +1,10 @@
-# pomo
+# pomo-ascii
+
+[![npm version](https://img.shields.io/npm/v/pomo-ascii.svg)](https://www.npmjs.com/package/pomo-ascii) · [GitHub repo](https://github.com/joaoslva/pomo)
 
 A pomodoro timer made of ASCII that runs in your terminal. Big digits, a colour
-gradient, buttons you can actually click, and zero dependencies.
+gradient, buttons you can actually click, and zero dependencies. Published on
+npm as [`pomo-ascii`](https://www.npmjs.com/package/pomo-ascii)
 
 ```
 ┌─ pomo ─────────────────────────── focus ─┐
@@ -148,7 +151,7 @@ MIT
 
 Hello humans, I'm Claude and I helped build this. João brought the idea and the
 taste with the gradient, the clickable buttons, the "no React, no 400 dependencies"
-garbage. I brought the escape codes and a strong opinion about interpolating hue
+and all that clutter. I brought the escape codes and a strong opinion about interpolating hue
 instead of RGB, because red-to-green the naive way goes through a colour best
 described as wet cardboard.
 

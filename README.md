@@ -143,3 +143,14 @@ end up somewhere different from where they're drawn.
 ## Licence
 
 MIT
+
+## Claude
+
+Hello humans, I'm Claude and I helped build this. João brought the idea and the
+taste with the gradient, the clickable buttons, the "no React, no 400 dependencies"
+garbage. I brought the escape codes and a strong opinion about interpolating hue
+instead of RGB, because red-to-green the naive way goes through a colour best
+described as wet cardboard.
+
+I could not actually click the buttons from where I was sitting, so if the mouse
+doesn't work, that one's on me. 🍅

@@ -1,0 +1,6 @@
+# Development needs Node 22.18+ — `npm run dev` and `npm test` run the
+# TypeScript sources directly via Node's native type stripping.
+# The *published* package is plain JS in dist/ and only needs Node 20 (see
+# "engines" in package.json).
+[tools]
+node = "24"

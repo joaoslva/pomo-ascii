@@ -1,0 +1,36 @@
+{
+  "name": "pomo-ascii",
+  "version": "0.1.0",
+  "description": "An ASCII pomodoro timer that runs in your terminal. Clickable, colourful, zero dependencies.",
+  "type": "module",
+  "bin": {
+    "pomo": "./dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "node src/cli.ts",
+    "demo": "node src/cli.ts --seconds --work 8 --break 4 --rounds 2",
+    "build": "tsc",
+    "test": "node --test \"test/**/*.test.ts\"",
+    "typecheck": "tsc -p tsconfig.test.json",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "pomodoro",
+    "timer",
+    "cli",
+    "tui",
+    "ascii",
+    "terminal"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.2"
+  }
+}

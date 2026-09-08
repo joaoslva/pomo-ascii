@@ -1,20 +1,28 @@
 /**
  * Every dirty thing in one file: raw mode, escape codes, mouse tracking,
- * cursor bookkeeping and cleanup. Nothing else in the project touches stdout.
+ * screen bookkeeping and cleanup. Nothing else in the project touches stdout.
  *
- * Drawing is done in place rather than on the alternate screen, so the timer
- * behaves like a command that happens to keep updating — it stays in your
- * scrollback when it exits. The frame is reserved once with newlines; every
- * redraw walks the cursor back up and overwrites those exact lines, never
- * emitting a trailing newline (which would scroll the screen every second).
+ * Drawing happens on the alternate screen. That costs us the frozen box in
+ * your scrollback — `stop` prints a one-line summary instead — and buys back
+ * the thing that matters: every frame is written at an absolute position we
+ * chose, so a resize can never leave half-overwritten rows behind. It also
+ * means we know exactly where the frame sits, which is what makes a click land
+ * on the button under it without asking the terminal where the cursor is.
  */
 
 const ESC = '\x1b';
 
+const ALT_ON = `${ESC}[?1049h`;
+const ALT_OFF = `${ESC}[?1049l`;
 const HIDE_CURSOR = `${ESC}[?25l`;
 const SHOW_CURSOR = `${ESC}[?25h`;
-const CLEAR_LINE = `${ESC}[2K`;
-const QUERY_CURSOR = `${ESC}[6n`;
+const CLEAR_SCREEN = `${ESC}[2J${ESC}[H`;
+const CLEAR_RIGHT = `${ESC}[K`;
+
+// Auto-wrap off. A frame that happens to reach the last column of the last row
+// would otherwise scroll the whole buffer; with wrapping off it just clips.
+const WRAP_OFF = `${ESC}[?7l`;
+const WRAP_ON = `${ESC}[?7h`;
 
 // 1000: press/release. 1003: motion too, so buttons can highlight on hover.
 // 1006: SGR coordinates, which don't cap out at column 223.
@@ -22,7 +30,6 @@ const MOUSE_ON = `${ESC}[?1000h${ESC}[?1003h${ESC}[?1006h`;
 const MOUSE_OFF = `${ESC}[?1006l${ESC}[?1003l${ESC}[?1000l`;
 
 const SGR_MOUSE = /^\x1b\[<(\d+);(\d+);(\d+)([Mm])/;
-const CURSOR_REPORT = /^\x1b\[(\d+);(\d+)R/;
 const UNKNOWN_ESCAPE = /^\x1b\[[\d;?<>]*[A-Za-z~]/;
 
 export type MouseEvent = {
@@ -39,40 +46,36 @@ export type Handlers = {
   onResize: () => void;
 };
 
-export type ScreenOptions = {
-  height: number;
-  mouse: boolean;
-};
+export type Size = { columns: number; rows: number };
 
 export class Screen {
-  readonly #height: number;
   readonly #wantMouse: boolean;
   readonly #out = process.stdout;
   readonly #in = process.stdin;
 
   #handlers: Handlers | null = null;
   #buffer = '';
-  #pendingReport: ((row: number, col: number) => void) | null = null;
-  #originRow: number | null = null;
   #mouseEnabled = false;
   #started = false;
   #lastFrame: string | null = null;
 
-  constructor(options: ScreenOptions) {
-    this.#height = options.height;
+  constructor(options: { mouse: boolean }) {
     this.#wantMouse = options.mouse;
-  }
-
-  /** 1-based absolute row of the frame's first line, or null if unknown. */
-  get originRow(): number | null {
-    return this.#originRow;
   }
 
   get mouseEnabled(): boolean {
     return this.#mouseEnabled;
   }
 
-  async start(handlers: Handlers): Promise<void> {
+  /**
+   * Current terminal size. A TTY that can't answer reports 0 rather than
+   * nothing at all, so this falls back on anything falsy, not just undefined.
+   */
+  size(): Size {
+    return { columns: this.#out.columns || 80, rows: this.#out.rows || 24 };
+  }
+
+  start(handlers: Handlers): void {
     if (this.#started) return;
     this.#started = true;
     this.#handlers = handlers;
@@ -82,35 +85,29 @@ export class Screen {
     this.#in.setEncoding('utf8');
     this.#in.on('data', this.#onData);
 
-    this.#out.write(HIDE_CURSOR);
-    // Reserve the frame. height-1 newlines leaves the cursor parked on the
-    // last line of the block, which is where every redraw starts from.
-    if (this.#height > 1) this.#out.write('\r\n'.repeat(this.#height - 1));
+    this.#out.write(ALT_ON + CLEAR_SCREEN + WRAP_OFF + HIDE_CURSOR);
 
-    const position = await this.#queryCursor();
-    if (position) {
-      this.#originRow = position.row - (this.#height - 1);
-      // Mouse coordinates are absolute, so without a cursor report we have no
-      // way to map a click onto a button. Better to leave it off than to guess.
-      if (this.#wantMouse) {
-        this.#out.write(MOUSE_ON);
-        this.#mouseEnabled = true;
-      }
+    if (this.#wantMouse) {
+      this.#out.write(MOUSE_ON);
+      this.#mouseEnabled = true;
     }
 
     process.on('SIGWINCH', this.#onResize);
   }
 
-  draw(lines: readonly string[]): void {
-    const frame = lines.join('\n');
+  /**
+   * Paints `lines` with their top-left corner at the given 1-based cell.
+   * Rows are addressed absolutely, so nothing depends on where the cursor
+   * happened to end up after the last frame.
+   */
+  draw(lines: readonly string[], originRow: number, originCol: number): void {
+    const frame = `${originRow},${originCol}\n${lines.join('\n')}`;
     if (frame === this.#lastFrame) return;
     this.#lastFrame = frame;
 
-    let out = '\r';
-    if (this.#height > 1) out += `${ESC}[${this.#height - 1}A`;
-    for (let i = 0; i < this.#height; i++) {
-      out += CLEAR_LINE + (lines[i] ?? '');
-      if (i < this.#height - 1) out += '\r\n';
+    let out = '';
+    for (let i = 0; i < lines.length; i++) {
+      out += `${ESC}[${originRow + i};${originCol}H${CLEAR_RIGHT}${lines[i] ?? ''}`;
     }
     this.#out.write(out);
   }
@@ -119,7 +116,8 @@ export class Screen {
     this.#out.write('\x07');
   }
 
-  stop(): void {
+  /** Leaves the alternate screen, then prints `summary` on the real one. */
+  stop(summary?: string): void {
     if (!this.#started) return;
     this.#started = false;
 
@@ -127,38 +125,19 @@ export class Screen {
     this.#in.removeListener('data', this.#onData);
 
     if (this.#mouseEnabled) this.#out.write(MOUSE_OFF);
-    this.#out.write(`\r\n${SHOW_CURSOR}`);
+    this.#out.write(WRAP_ON + SHOW_CURSOR + ALT_OFF);
+    if (summary) this.#out.write(`${summary}\n`);
 
     if (this.#in.isTTY) this.#in.setRawMode(false);
     this.#in.pause();
   }
 
-  #queryCursor(): Promise<{ row: number; col: number } | null> {
-    return new Promise((resolve) => {
-      let settled = false;
-      const finish = (value: { row: number; col: number } | null) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        this.#pendingReport = null;
-        resolve(value);
-      };
-
-      // Terminals that don't answer DSR shouldn't hang the startup.
-      const timer = setTimeout(() => finish(null), 250);
-      this.#pendingReport = (row, col) => finish({ row, col });
-      this.#out.write(QUERY_CURSOR);
-    });
-  }
-
   #onResize = (): void => {
-    // After a draw the cursor sits on the last line of the frame, so a fresh
-    // cursor report tells us where the frame ended up after any reflow.
-    void this.#queryCursor().then((position) => {
-      if (position) this.#originRow = position.row - (this.#height - 1);
-      this.#lastFrame = null;
-      this.#handlers?.onResize();
-    });
+    // The new geometry may want a different layout at a different offset, so
+    // wipe the buffer rather than trusting anything already on it.
+    this.#out.write(CLEAR_SCREEN);
+    this.#lastFrame = null;
+    this.#handlers?.onResize();
   };
 
   #onData = (chunk: string): void => {
@@ -169,13 +148,6 @@ export class Screen {
       if (mouse) {
         this.#buffer = this.#buffer.slice(mouse[0].length);
         this.#emitMouse(Number(mouse[1]), Number(mouse[2]), Number(mouse[3]), mouse[4] === 'M');
-        continue;
-      }
-
-      const report = CURSOR_REPORT.exec(this.#buffer);
-      if (report) {
-        this.#buffer = this.#buffer.slice(report[0].length);
-        this.#pendingReport?.(Number(report[1]), Number(report[2]));
         continue;
       }
 

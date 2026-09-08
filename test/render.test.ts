@@ -4,7 +4,7 @@ import { describe, it } from 'node:test';
 import { bigText, bigTextWidth, DIGIT_HEIGHT } from '../src/digits.ts';
 import { hslToRgb, phaseColor, rgbToAnsi256 } from '../src/gradient.ts';
 import { UNICODE } from '../src/glyphs.ts';
-import { FRAME_HEIGHT, FRAME_WIDTH, render } from '../src/render.ts';
+import { COMPACT, FULL, layout, render, TIERS, TINY, tooSmall, type Tier } from '../src/render.ts';
 import { buildPhases, createSession, pause, skip } from '../src/session.ts';
 
 const DURATIONS = { work: 25 * 60, shortBreak: 5 * 60, longBreak: 15 * 60, rounds: 4 };
@@ -21,6 +21,7 @@ const view = (overrides: Partial<Parameters<typeof render>[0]> = {}) =>
     glyphs: UNICODE,
     hovered: null,
     mouse: true,
+    tier: FULL,
     ...overrides,
   });
 
@@ -39,11 +40,67 @@ describe('digits', () => {
   });
 });
 
+describe('layout', () => {
+  it('picks the biggest tier that fits', () => {
+    assert.equal(layout(80, 24), FULL);
+    assert.equal(layout(44, 13), FULL);
+    assert.equal(layout(43, 13), COMPACT);
+    assert.equal(layout(44, 12), COMPACT);
+    assert.equal(layout(34, 9), COMPACT);
+    assert.equal(layout(33, 9), TINY);
+    assert.equal(layout(16, 3), TINY);
+    assert.equal(layout(15, 3), null);
+    assert.equal(layout(16, 2), null);
+  });
+
+  it('orders the tiers largest first', () => {
+    for (let i = 1; i < TIERS.length; i++) {
+      const previous = TIERS[i - 1]!;
+      const tier = TIERS[i]!;
+      assert.ok(tier.width < previous.width && tier.height < previous.height);
+    }
+  });
+});
+
+describe('too small', () => {
+  it('never draws outside the space it was given', () => {
+    for (let columns = 0; columns < 20; columns++) {
+      for (let rows = 0; rows < 5; rows++) {
+        const lines = tooSmall(columns, rows);
+        assert.ok(lines.length <= rows, `${columns}x${rows} fits vertically`);
+        for (const line of lines) {
+          assert.ok(line.length <= columns, `${columns}x${rows}: "${line}" fits horizontally`);
+        }
+      }
+    }
+  });
+
+  it('says what is needed when there is room to say it', () => {
+    const lines = tooSmall(12, 4).join(' ');
+    assert.ok(lines.includes('12x4'), 'reports the current size');
+    assert.ok(lines.includes(`${TINY.width}x${TINY.height}`), 'reports the required size');
+  });
+
+  it('only ever runs at sizes the tiny tier already rejected', () => {
+    // Anything wider than this would be unreachable dead weight.
+    for (let columns = 0; columns < 16; columns++) {
+      for (let rows = 0; rows < 40; rows++) {
+        if (layout(columns, rows)) continue;
+        for (const line of tooSmall(columns, rows)) assert.ok(line.length <= columns);
+      }
+    }
+  });
+});
+
 describe('render', () => {
-  it('produces a frame of exactly the declared size', () => {
-    const frame = view();
-    assert.equal(frame.lines.length, FRAME_HEIGHT);
-    for (const line of frame.lines) assert.equal(strip(line).length, FRAME_WIDTH);
+  it('produces a frame of exactly the declared size, in every tier', () => {
+    for (const tier of TIERS) {
+      const frame = view({ tier });
+      assert.equal(frame.lines.length, tier.height, `${tier.name} height`);
+      for (const line of frame.lines) {
+        assert.equal(strip(line).length, tier.width, `${tier.name} width`);
+      }
+    }
   });
 
   it('keeps the frame rectangular in every state', () => {
@@ -58,18 +115,29 @@ describe('render', () => {
     for (const session of states) {
       for (const mode of ['truecolor', 'ansi256', 'none'] as const) {
         for (const mouse of [true, false]) {
-          const frame = render({
-            session,
-            now: T0 + 60_000,
-            mode,
-            glyphs: UNICODE,
-            hovered: 'skip',
-            mouse,
-          });
-          assert.equal(frame.lines.length, FRAME_HEIGHT);
-          for (const line of frame.lines) assert.equal(strip(line).length, FRAME_WIDTH);
+          for (const tier of TIERS) {
+            const frame = render({
+              session,
+              now: T0 + 60_000,
+              mode,
+              glyphs: UNICODE,
+              hovered: 'skip',
+              mouse,
+              tier,
+            });
+            assert.equal(frame.lines.length, tier.height);
+            for (const line of frame.lines) assert.equal(strip(line).length, tier.width);
+          }
         }
       }
+    }
+  });
+
+  it('stays rectangular with a round count the status row cannot draw dots for', () => {
+    const many = { ...DURATIONS, rounds: 40 };
+    for (const tier of TIERS) {
+      const frame = view({ session: createSession(buildPhases(many), T0), tier });
+      for (const line of frame.lines) assert.equal(strip(line).length, tier.width);
     }
   });
 
@@ -80,9 +148,16 @@ describe('render', () => {
   });
 
   it('emits no escape codes when colour is off', () => {
-    for (const line of view({ mode: 'none' }).lines) {
-      assert.equal(line.includes('\x1b'), false);
+    for (const tier of TIERS) {
+      for (const line of view({ mode: 'none', tier }).lines) {
+        assert.equal(line.includes('\x1b'), false);
+      }
     }
+  });
+
+  it('carries the round count in the compact header, which has no status row', () => {
+    const header = strip(view({ tier: COMPACT }).lines[0]!);
+    assert.ok(header.includes('focus 1/4'), header);
   });
 
   it('flips the primary button between pause and resume without moving it', () => {
@@ -97,14 +172,30 @@ describe('render', () => {
 
 describe('hit boxes', () => {
   it('lines up with where the labels were actually drawn', () => {
+    for (const tier of [FULL, COMPACT] as Tier[]) {
+      const frame = view({ tier });
+      assert.equal(frame.hits.length, 4);
+      for (const hit of frame.hits) {
+        const row = strip(frame.lines[hit.row]!);
+        const text = row.slice(hit.col, hit.col + hit.width);
+        assert.equal(text.startsWith('['), true, `${tier.name}: ${hit.id} starts at a bracket`);
+        assert.equal(text.endsWith(']'), true, `${tier.name}: ${hit.id} ends at a bracket`);
+      }
+    }
+  });
+
+  it('has nothing to click in the tiny tier', () => {
+    assert.deepEqual(view({ tier: TINY }).hits, []);
+  });
+
+  it('points at the row it says it does', () => {
     const frame = view();
     const row = strip(frame.lines[10]!);
 
-    assert.equal(frame.hits.length, 4);
     for (const hit of frame.hits) {
+      assert.equal(hit.row, 10);
       const text = row.slice(hit.col, hit.col + hit.width);
       assert.equal(text.startsWith('['), true, `hit for ${hit.id} starts at a bracket`);
-      assert.equal(text.endsWith(']'), true, `hit for ${hit.id} ends at a bracket`);
     }
   });
 
@@ -112,7 +203,7 @@ describe('hit boxes', () => {
     const hits = [...view().hits].sort((a, b) => a.col - b.col);
     for (let i = 0; i < hits.length; i++) {
       const hit = hits[i]!;
-      assert.ok(hit.col >= 1 && hit.col + hit.width <= FRAME_WIDTH - 1);
+      assert.ok(hit.col >= 1 && hit.col + hit.width <= FULL.width - 1);
       const next = hits[i + 1];
       if (next) assert.ok(hit.col + hit.width <= next.col);
     }

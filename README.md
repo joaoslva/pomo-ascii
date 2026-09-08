@@ -9,13 +9,13 @@ npm as [`pomo-ascii`](https://www.npmjs.com/package/pomo-ascii)
 ```
 ┌─ pomo ─────────────────────────── focus ─┐
 │                                          │
-│      ██    ██████      ██████  ██████    │
+│      ██    ██████      ██  ██  ██████    │
 │    ████    ██      ██  ██  ██  ██  ██    │
-│      ██    ██████      ██  ██  ██  ██    │
-│      ██        ██  ██  ██  ██  ██  ██    │
-│    ██████  ██████      ██████  ██████    │
+│      ██    ██████      ██████  ██  ██    │
+│      ██    ██  ██  ██      ██  ██  ██    │
+│    ██████  ██████          ██  ██████    │
 │                                          │
-│    ██████████████░░░░░░░░░░░░░░░░░░░░    │
+│    ███████████░░░░░░░░░░░░░░░░░░░░░░░    │
 │                                          │
 │  [ pause  ] [ skip ] [ reset ] [ quit ]  │
 │ ○○○○ round 1/4       click · space s r q │
@@ -81,20 +81,58 @@ And if you just want to watch the whole thing happen in under a minute:
 pomo --seconds --work 8 --break 4 --rounds 2
 ```
 
+## It fits whatever window you've got
+
+The box comes in three sizes and it picks the biggest one your terminal can
+hold, re-picking it the moment you drag the window. Nothing stretches — a
+progress bar 200 columns wide is not an improvement — so a big terminal just
+gets the box centred in it.
+
+At 34×9 the spacing goes, the digits get thin, the round count moves up into the
+title bar and the buttons lose their padding:
+
+```
+┌─ pomo ───────────── focus 1/4 ─┐
+│        █  ███   █ █ ███        │
+│       ██  █   █ █ █ █ █        │
+│        █  ███   ███ █ █        │
+│        █  █ █ █   █ █ █        │
+│       ███ ███     █ ███        │
+│   █████████░░░░░░░░░░░░░░░░░   │
+│ [pause ] [skip] [reset] [quit] │
+└────────────────────────────────┘
+```
+
+At 16×3 there's no room for a border, never mind a button, so it drops to three
+bare lines. The keys still work:
+
+```
+16:40      focus
+█████░░░░░░░░░░░
+1/4    spc s r q
+```
+
+Below that there is nothing honest left to draw, so it says so instead:
+
+```
+too small
+have 12x4
+need 16x3
+```
+
 ## Stuff worth knowing
 
-It just draws in place. No fancy premium game-like screen buffer, no wiping your
-scrollback — the terminal updates some characters and that's pretty much it.
-When you quit, the last frame stays where it was, like any other command.
+It runs on the alternate screen, the way `top` and `less` do, so your scrollback
+comes back untouched when you quit. What it leaves behind is a single line
+telling you what you actually got done:
+
+```
+pomo · 3/4 rounds · 1h 15m focused
+```
 
 Mouse tracking does steal your text selection while it's running, which is
 annoying but it's just how terminals work. Hold `shift` while you drag and you
 can select anyway in most of them, or run `--no-mouse` if you'd rather not.
-
-Some terminals won't tell the app where the cursor is, and without that a click
-can't be matched to a button. Rather than guessing and having your clicks land
-on the wrong thing, it quietly falls back to keyboard only. You'll know because
-the hint at the bottom says `keys` instead of `click`.
 
 Colour sorts itself out — 24-bit if your terminal advertises it, the 256-colour
 palette otherwise, and no colour at all if you pipe it somewhere or set
@@ -131,7 +169,7 @@ tests don't need a terminal or a fake clock or a single mock:
 | `src/terminal.ts` | raw mode, escape codes, mouse, cleanup — all the mess |
 | `src/cli.ts` | glues it together, owns the process |
 
-Two things to know before you change anything.
+Three things to know before you change anything.
 
 Nothing counts ticks. The session remembers when it last resumed and works out
 the rest from `Date.now()`, because intervals drift and laptops go to sleep, and
@@ -139,9 +177,15 @@ you don't want a lid closed for an hour to add an hour to your pomodoro. If a
 tick shows up late, the overshoot gets rolled into the next phase instead of
 being handed to you as free time.
 
-And the clickable regions come out of `render()` along with the lines, worked
-out from the same numbers that placed the labels. That way the buttons can't
-end up somewhere different from where they're drawn.
+The clickable regions come out of `render()` along with the lines, worked out
+from the same numbers that placed the labels. That way the buttons can't end up
+somewhere different from where they're drawn.
+
+And every frame is written at an absolute position that `cli.ts` chose, never
+relative to wherever the cursor happened to stop. That's what makes a resize
+safe: the layout is recomputed, the screen is cleared, and the new frame lands
+somewhere known. It's also why clicking works everywhere — the app never has to
+ask the terminal where the cursor is.
 
 ## Licence
 

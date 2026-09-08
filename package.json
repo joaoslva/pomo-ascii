@@ -1,6 +1,6 @@
 {
   "name": "pomo-ascii",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "An ASCII pomodoro timer that runs in your terminal. Clickable, colourful, zero dependencies.",
   "type": "module",
   "repository": {

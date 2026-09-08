@@ -185,3 +185,15 @@ export function formatClock(ms: number): string {
   const seconds = totalSeconds % 60;
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
+
+/** Total time spent in work phases: whole ones behind us, plus the live one. */
+export function focusedMs(s: Session, now: number): number {
+  let ms = 0;
+  for (let i = 0; i < s.index && i < s.phases.length; i++) {
+    const phase = s.phases[i]!;
+    if (phase.kind === 'work') ms += phase.seconds * 1000;
+  }
+  const phase = currentPhase(s);
+  if (phase?.kind === 'work') ms += Math.min(elapsedMs(s, now), phase.seconds * 1000);
+  return ms;
+}

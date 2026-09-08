@@ -66,7 +66,8 @@ long break at the end to finish. The dots in the bottom corner keep count.
     --ascii              plain ASCII instead of box drawing characters
     --no-color           turn colour off (NO_COLOR works too)
     --no-mouse           turn mouse tracking off
-    --no-bell            stop it dinging between phases
+    --bell               plain terminal bell instead of the jingle
+    --no-sound           silence, no jingle and no bell
 ```
 
 So if you're a 50/10 person:
@@ -120,6 +121,22 @@ have 12x4
 need 16x3
 ```
 
+## The noise it makes
+
+One terminal bell is easy to miss — plenty of terminals mute it, or turn it
+into a flash — which is not much use for telling you a focus block just ended.
+So `pomo` synthesises a short jingle instead: a rising four-note run when focus
+ends, two lower notes when a break does, and something a bit more pleased with
+itself when the whole session is over.
+
+The notes are just data, a list of frequencies and durations, which is the
+groundwork for making them yours in a later release. There's still nothing in
+`node_modules` — the WAV is generated in memory — but playing it does mean
+handing a file to whatever your machine has: `pw-play`, `paplay`, `aplay` or
+`ffplay` on Linux, `afplay` on macOS, PowerShell on Windows. The first one that
+works is the one it keeps. If none of them do, it falls back to the bell, and
+`--bell` picks that on purpose.
+
 ## Stuff worth knowing
 
 It runs on the alternate screen, the way `top` and `less` do, so your scrollback
@@ -166,6 +183,7 @@ tests don't need a terminal or a fake clock or a single mock:
 | `src/digits.ts` | the little 5-row font |
 | `src/glyphs.ts` | the two character sets |
 | `src/config.ts` | flags |
+| `src/audio.ts` | synthesises the jingle and finds something to play it |
 | `src/terminal.ts` | raw mode, escape codes, mouse, cleanup — all the mess |
 | `src/cli.ts` | glues it together, owns the process |
 

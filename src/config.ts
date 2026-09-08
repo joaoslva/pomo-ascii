@@ -1,5 +1,8 @@
 import { parseArgs } from 'node:util';
 
+/** How the end of a phase is announced. */
+export type SoundMode = 'jingle' | 'bell' | 'off';
+
 export type Config = {
   work: number;
   shortBreak: number;
@@ -10,7 +13,7 @@ export type Config = {
   color: boolean;
   ascii: boolean;
   mouse: boolean;
-  bell: boolean;
+  sound: SoundMode;
 };
 
 export const DEFAULTS: Config = {
@@ -22,7 +25,7 @@ export const DEFAULTS: Config = {
   color: true,
   ascii: false,
   mouse: true,
-  bell: true,
+  sound: 'jingle',
 };
 
 export const HELP = `
@@ -41,7 +44,8 @@ export const HELP = `
         --ascii              plain ASCII glyphs instead of box drawing
         --no-color           disable colour (NO_COLOR is honoured too)
         --no-mouse           disable mouse tracking
-        --no-bell            don't ring the terminal bell between phases
+        --bell               plain terminal bell instead of the jingle
+        --no-sound           silence: no jingle, no bell
 
     -h, --help               show this
     -v, --version            print the version
@@ -85,7 +89,10 @@ export function parseConfig(argv: readonly string[]): ParseResult {
         // are declared as their own flags.
         'no-color': { type: 'boolean' },
         'no-mouse': { type: 'boolean' },
+        'no-sound': { type: 'boolean' },
+        // --no-bell is what this flag used to be called.
         'no-bell': { type: 'boolean' },
+        bell: { type: 'boolean' },
         help: { type: 'boolean', short: 'h' },
         version: { type: 'boolean', short: 'v' },
       },
@@ -110,13 +117,18 @@ export function parseConfig(argv: readonly string[]): ParseResult {
       ascii: values.ascii ?? DEFAULTS.ascii,
       color: !values['no-color'],
       mouse: !values['no-mouse'],
-      bell: !values['no-bell'],
+      sound: soundMode(values),
     };
     return { kind: 'run', config };
   } catch (error) {
     if (error instanceof ConfigError) return { kind: 'error', message: error.message };
     throw error;
   }
+}
+
+function soundMode(values: { 'no-sound'?: boolean; 'no-bell'?: boolean; bell?: boolean }): SoundMode {
+  if (values['no-sound'] || values['no-bell']) return 'off';
+  return values.bell ? 'bell' : DEFAULTS.sound;
 }
 
 /** Turns the user-facing durations into the seconds the session model wants. */

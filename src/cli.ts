@@ -7,6 +7,7 @@
 
 import { readFileSync } from 'node:fs';
 
+import { Chime, JINGLES } from './audio.ts';
 import { durations, HELP, parseConfig } from './config.ts';
 import { detectColorMode, type ColorMode } from './gradient.ts';
 import { glyphSet } from './glyphs.ts';
@@ -23,6 +24,7 @@ import {
   tick,
   toggle,
   totalWorkPhases,
+  type Phase,
   type Session,
 } from './session.ts';
 import { Screen, type MouseEvent } from './terminal.ts';
@@ -74,6 +76,7 @@ function main(): void {
   const mode: ColorMode = config.color ? detectColorMode() : 'none';
   const glyphs = glyphSet(config.ascii);
   const screen = new Screen({ mouse: config.mouse });
+  const chime = new Chime(() => screen.bell());
 
   let session: Session = createSession(buildPhases(durations(config)), Date.now());
   let hovered: ButtonId | null = null;
@@ -105,10 +108,25 @@ function main(): void {
     screen.draw(frame.lines, originRow, originCol);
   };
 
+  /** Focus ending and a break ending are different events; they sound it. */
+  const announce = (completed: readonly Phase[]): void => {
+    if (config.sound === 'off' || completed.length === 0) return;
+    if (config.sound === 'bell') {
+      screen.bell();
+      return;
+    }
+    const name = isFinished(session)
+      ? 'done'
+      : completed[completed.length - 1]!.kind === 'work'
+        ? 'focus'
+        : 'break';
+    chime.play(name, JINGLES[name]!);
+  };
+
   const advance = (): void => {
     const result = tick(session, Date.now());
     session = result.session;
-    if (result.completed.length > 0 && config.bell) screen.bell();
+    announce(result.completed);
     paint();
   };
 
@@ -144,6 +162,7 @@ function main(): void {
     if (exiting) return;
     exiting = true;
     if (timer) clearInterval(timer);
+    chime.dispose();
     screen.stop(summary());
     process.exit(0);
   };
@@ -197,7 +216,10 @@ function main(): void {
 
   process.on('SIGTERM', shutdown);
   process.on('SIGHUP', shutdown);
-  process.on('exit', () => screen.stop());
+  process.on('exit', () => {
+    chime.dispose();
+    screen.stop();
+  });
 
   screen.start({ onKey, onMouse, onResize: paint });
   paint();

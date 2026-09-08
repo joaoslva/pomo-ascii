@@ -22,11 +22,21 @@ describe('parseConfig', () => {
   });
 
   it('handles the negatable booleans', () => {
-    const config = run(['--no-color', '--no-mouse', '--no-bell', '--ascii']);
+    const config = run(['--no-color', '--no-mouse', '--no-sound', '--ascii']);
     assert.equal(config.color, false);
     assert.equal(config.mouse, false);
-    assert.equal(config.bell, false);
+    assert.equal(config.sound, 'off');
     assert.equal(config.ascii, true);
+  });
+
+  it('picks a sound mode', () => {
+    assert.equal(run([]).sound, 'jingle');
+    assert.equal(run(['--bell']).sound, 'bell');
+    assert.equal(run(['--no-sound']).sound, 'off');
+    // What --no-sound used to be called, kept working.
+    assert.equal(run(['--no-bell']).sound, 'off');
+    // Silence wins over a preference for how to make noise.
+    assert.equal(run(['--bell', '--no-sound']).sound, 'off');
   });
 
   it('rejects nonsense durations', () => {

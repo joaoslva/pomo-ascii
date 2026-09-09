@@ -7,23 +7,35 @@ Categorized depending on the effort with:
 - **M**: a bit more complex, but still manageable. Completed in an afternoon
 - **L**: more work to implement, but not necessarily humongous. Definitely needs planning and a bit of thinking beforehand
 
-## 0. Config file
+## 0. Settings menu
 
-Right now all the possible configuration to the app is being done through CLI flags, which works, but limits functionality and actually the ideas below. A configuration file is the perfect, and traditional, choice to solve this issue.
+The config file part of this is done, `~/.config/pomo/config.json` gets written on
+first run and read every run after, with flags still winning for a single run.
+What's left is the good half.
 
-The config file can live somewhere like `~/.config/pomo/config.json`, autocreated with defaults if not existing. Can be edited manually, but also a menu before the pomo session starts running would be awesome. For example, I could configure there the number of rounds, time per round, etc.
+A menu before the session starts, showing the current values and letting you
+change them without going and finding a JSON file. Rounds, time per round, the
+sound mode, the lot. And the same menu reachable during a run, which is what
+makes the customization update below actually pleasant instead of being a
+config file with extra steps.
 
-Worth considering, removing the CLI flag dependency, since the configuration will be done through the menu beforehand, kept after restarts (autoloaded to the menu). This will also bridge with the customization update described below, this "starter" menu can allow the user to configure the UI beforehand, but also during execution. At the same time, the flags can be kept as a way to test the system, or as a legacy/different option that would let you configure on launch most of the app.
+The rule I want to keep when this lands: if any flag is passed, skip the menu
+and go straight into the timer. Bare `pomo` opens the menu, `pomo -w 50` starts
+running. Nobody who already knows what they want should have to click through a
+screen to get it, and aliases keep working.
 
-One rule that would keep both paths happy: if any flag is passed, skip the menu and go straight into the timer. Bare `pomo` opens the menu, `pomo -w 50` starts running immediately. That way nobody who already knows what they want has to click through a screen to get it, aliases keep working, and the `demo` script doesn't need special treatment. Precedence stays the boring one, flag beats config file beats default.
+For the menu during execution, we need to decide what happens to the phase that
+is currently running when you change its length. I think the sane answer is that
+changes only apply to phases that haven't started yet, and the running one keeps
+the length it started with, otherwise the clock jumps around under you while you
+are looking at it.
 
-A couple of small things to not forget when writing it. Respect `$XDG_CONFIG_HOME` instead of hardcoding `~/.config`, and if the autocreate write fails for whatever reason (read-only home, a container, a weird setup) just run with the defaults instead of blowing up. Writing a file into someone's home on first run should never be the thing that stops the timer from starting.
+This is the real work of the whole page. `render.ts` today is strictly one way,
+state goes in and a frame comes out, and a menu needs to track which field has
+focus, whether you are editing it, and how to bump a number up and down. It also
+needs to write the file back, not just read it, which nothing does yet.
 
-For the menu during execution, we need to decide what happens to the phase that is currently running when you change its length. I think the sane answer is that changes only apply to phases that haven't started yet, and the running one keeps the length it started with, otherwise the clock jumps around under you while you are looking at it.
-
-The file itself is quick, the menu is where the actual work is. `render.ts` today is strictly one way, state goes in and a frame comes out, and a menu needs to track which field has focus, whether you are editing it, and how to bump a number up and down. That is a genuinely new interactive piece, so it deserves its own budget.
-
-> Workload: **S** for the config file, **M** for the menu
+> Workload: **M**
 
 ## 1. Customization update
 
@@ -112,25 +124,9 @@ On the phrases, keying them by event instead of keeping one flat list makes it s
 
 Append one JSON line per completed phase to somewhere like `$XDG_DATA_HOME/pomo/log.jsonl`, then `pomo --stats` draws an ASCII bar chart of the week. This is the thing every pomodoro tool grows eventually, it costs maybe sixty lines and no dependencies, and it's the only idea on this page that still means something a month later. Arguably worth doing before the companion.
 
+`--task` already exists and does nothing but get drawn on screen, so writing it into each log line is free and it's what turns the log from a row of numbers into something you'd actually read back.
+
 > Workload: **S/M**
-
-### Task labels
-
-`pomo --task "write the parser"`, shown in the header and written into the log. Two lines of rendering, and it's what turns the log from a row of numbers into something you'd actually read back.
-
-> Workload: **S**
-
-### Terminal title
-
-Set the tab title to something like `24:13 · focus` with OSC 2. About five lines in `terminal.ts`, and it means a minimized terminal still tells you where you are. Probably the best value per line on this whole page.
-
-> Workload: **S**
-
-### Desktop notification
-
-`notify-send`, `osascript`, or a PowerShell toast, discovered by trying them in order until one works. That's the exact pattern `Chime` already uses for audio players, so it's copying a problem that's already solved. Sound doesn't help when the terminal is on another desktop, which is precisely when a pomodoro gets lost.
-
-> Workload: **S**
 
 ### Resume an interrupted session
 
@@ -138,11 +134,14 @@ Write the session state out on quit and offer `pomo --resume`. The model is alre
 
 > Workload: **M**
 
-### Strict mode
+## Done
 
-`--strict` disables skip and reset while a focus phase is running. A commitment device, four lines, and it fits the spirit of the thing.
-
-> Workload: **S**
+- Reset resets the whole session instead of just the current phase
+- Config file at `~/.config/pomo/config.json`, flags override it per run
+- `--task`, shown on the status row
+- `--strict`, greys out skip and reset during focus
+- Clock in the terminal title bar, `--no-title` to stop it
+- Desktop notifications when a phase ends, `--no-notify` to stop them
 
 ## Housekeeping
 

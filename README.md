@@ -48,7 +48,7 @@ Click the buttons. Or if your hands are already on the keyboard:
 | --- | --- |
 | `space` | pause / resume |
 | `s` | skip to the next phase |
-| `r` | restart the current phase |
+| `r` | reset the whole session |
 | `q` | quit (`ctrl-c` too) |
 
 A session is `--rounds` focus blocks with a short break after each one, then a

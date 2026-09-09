@@ -18,7 +18,6 @@ import {
   createSession,
   focusedMs,
   isFinished,
-  restartPhase,
   restartSession,
   skip,
   tick,
@@ -140,9 +139,7 @@ function main(): void {
         session = skip(session, now);
         break;
       case 'restart':
-        session = isFinished(session)
-          ? restartSession(session, now)
-          : restartPhase(session, now);
+        session = restartSession(session, now);
         break;
       case 'quit':
         shutdown();

@@ -14,6 +14,7 @@ import {
   progress,
   remainingMs,
   restartPhase,
+  restartSession,
   resume,
   skip,
   tick,
@@ -141,6 +142,28 @@ describe('skip and restart', () => {
     const session = createSession(buildPhases(DURATIONS), T0);
     const restarted = restartPhase(session, T0 + 10 * 60 * 1000);
     assert.equal(remainingMs(restarted, T0 + 10 * 60 * 1000), 25 * 60 * 1000);
+  });
+
+  it('restartSession rewinds the round count, not just the phase', () => {
+    const now = T0 + 60_000;
+    const session = skip(skip(createSession(buildPhases(DURATIONS), T0), now), now);
+    assert.equal(currentRound(session), 2);
+
+    const reset = restartSession(session, now);
+    assert.equal(currentRound(reset), 1);
+    assert.equal(completedWorkPhases(reset), 0);
+    assert.equal(currentPhase(reset)?.kind, 'work');
+    assert.equal(remainingMs(reset, now), 25 * 60 * 1000);
+  });
+
+  it('restartSession starts the clock again after the session has finished', () => {
+    const session = createSession(buildPhases(DURATIONS), T0);
+    const finished = tick(session, T0 + 24 * 60 * 60 * 1000).session;
+    assert.equal(isFinished(finished), true);
+
+    const reset = restartSession(finished, T0);
+    assert.equal(isFinished(reset), false);
+    assert.equal(isRunning(reset), true);
   });
 });
 

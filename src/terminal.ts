@@ -29,6 +29,13 @@ const WRAP_ON = `${ESC}[?7h`;
 const MOUSE_ON = `${ESC}[?1000h${ESC}[?1003h${ESC}[?1006h`;
 const MOUSE_OFF = `${ESC}[?1006l${ESC}[?1003l${ESC}[?1000l`;
 
+// OSC 2 sets the window title. 22/23;2 push and pop it on the terminal's own
+// stack, which is the only honest way to put it back: there is no sequence
+// that asks a terminal what its title currently is.
+const TITLE_PUSH = `${ESC}[22;2t`;
+const TITLE_POP = `${ESC}[23;2t`;
+const setTitle = (text: string): string => `${ESC}]2;${text}\x07`;
+
 const SGR_MOUSE = /^\x1b\[<(\d+);(\d+);(\d+)([Mm])/;
 const UNKNOWN_ESCAPE = /^\x1b\[[\d;?<>]*[A-Za-z~]/;
 
@@ -53,14 +60,18 @@ export class Screen {
   readonly #out = process.stdout;
   readonly #in = process.stdin;
 
+  readonly #wantTitle: boolean;
+
   #handlers: Handlers | null = null;
   #buffer = '';
   #mouseEnabled = false;
   #started = false;
   #lastFrame: string | null = null;
+  #lastTitle: string | null = null;
 
-  constructor(options: { mouse: boolean }) {
+  constructor(options: { mouse: boolean; title?: boolean }) {
     this.#wantMouse = options.mouse;
+    this.#wantTitle = options.title ?? false;
   }
 
   get mouseEnabled(): boolean {
@@ -87,6 +98,8 @@ export class Screen {
 
     this.#out.write(ALT_ON + CLEAR_SCREEN + WRAP_OFF + HIDE_CURSOR);
 
+    if (this.#wantTitle) this.#out.write(TITLE_PUSH);
+
     if (this.#wantMouse) {
       this.#out.write(MOUSE_ON);
       this.#mouseEnabled = true;
@@ -112,6 +125,16 @@ export class Screen {
     this.#out.write(out);
   }
 
+  /**
+   * Puts `text` in the title bar, so a terminal you can't see still tells you
+   * how long is left. Repeats are dropped: this runs on every tick.
+   */
+  title(text: string): void {
+    if (!this.#wantTitle || text === this.#lastTitle) return;
+    this.#lastTitle = text;
+    this.#out.write(setTitle(text));
+  }
+
   bell(): void {
     this.#out.write('\x07');
   }
@@ -125,6 +148,7 @@ export class Screen {
     this.#in.removeListener('data', this.#onData);
 
     if (this.#mouseEnabled) this.#out.write(MOUSE_OFF);
+    if (this.#wantTitle) this.#out.write(TITLE_POP);
     this.#out.write(WRAP_ON + SHOW_CURSOR + ALT_OFF);
     if (summary) this.#out.write(`${summary}\n`);
 

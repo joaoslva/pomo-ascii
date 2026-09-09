@@ -71,6 +71,10 @@ export type ViewState = {
   hovered: ButtonId | null;
   /** Drives the hint text, so a terminal without mouse support says so. */
   mouse: boolean;
+  /** What you're working on. Takes the status row's right-hand side if set. */
+  task: string;
+  /** Skip and reset are locked while a focus phase runs. */
+  strict: boolean;
   tier: Tier;
 };
 
@@ -191,7 +195,10 @@ function renderBox(view: ViewState, style: BoxStyle): Frame {
   if (style.spacers) lines.push(blank());
 
   // ── buttons ──────────────────────────────────────────────────────────────
-  const buttons = buttonLabels(session);
+  // Strict mode only bites while focus is actually running: pausing is still
+  // allowed, and a break is nobody's test of willpower.
+  const locked = view.strict && !finished && kind === 'work' && isRunning(session);
+  const buttons = buttonLabels(session, locked);
   const buttonsPlain = buttons.map((b) => (style.padButtons ? `[ ${b.label} ]` : `[${b.label}]`));
   const buttonsWidth = buttonsPlain.reduce((sum, b) => sum + b.length, 0) + (buttons.length - 1);
   const [buttonsLeft] = padCenter(' '.repeat(buttonsWidth), inner);
@@ -203,8 +210,14 @@ function renderBox(view: ViewState, style: BoxStyle): Frame {
   buttons.forEach((button, i) => {
     const text = buttonsPlain[i] ?? '';
     const hovered = view.hovered === button.id;
-    styledButtons += hovered ? invert(fg(text, color, mode), mode) : bold(text, mode);
-    hits.push({ id: button.id, row: buttonRow, col: cursor, width: text.length });
+    if (button.disabled) {
+      // Dimmed and unclickable together. A button that looks live and does
+      // nothing is worse than one that admits it's off.
+      styledButtons += dim(text, mode);
+    } else {
+      styledButtons += hovered ? invert(fg(text, color, mode), mode) : bold(text, mode);
+      hits.push({ id: button.id, row: buttonRow, col: cursor, width: text.length });
+    }
     cursor += text.length;
     if (i < buttons.length - 1) {
       styledButtons += ' ';
@@ -214,7 +227,9 @@ function renderBox(view: ViewState, style: BoxStyle): Frame {
   lines.push(row(styledButtons, buttonsWidth));
 
   // ── status ───────────────────────────────────────────────────────────────
-  if (style.statusRow) lines.push(statusRow(session, color, mode, g, border, view.mouse, inner));
+  if (style.statusRow) {
+    lines.push(statusRow(session, color, mode, g, border, view.mouse, view.task, inner));
+  }
 
   // ── bottom border ────────────────────────────────────────────────────────
   lines.push(dim(g.bottomLeft + g.horizontal.repeat(inner) + g.bottomRight, mode));
@@ -303,16 +318,25 @@ function headerLabel(view: ViewState): string {
   return PHASE_LABELS[kind] + (paused ? ' · paused' : '');
 }
 
-function buttonLabels(session: Session): { id: ButtonId; label: string }[] {
+type Button = { id: ButtonId; label: string; disabled: boolean };
+
+function buttonLabels(session: Session, locked: boolean): Button[] {
   // The first label is padded to a fixed width so the row doesn't jitter when
   // it flips between "pause" and "resume".
   const primary = isFinished(session) ? 'again' : isRunning(session) ? 'pause' : 'resume';
   return [
-    { id: 'toggle', label: primary.padEnd(6) },
-    { id: 'skip', label: 'skip' },
-    { id: 'restart', label: 'reset' },
-    { id: 'quit', label: 'quit' },
+    { id: 'toggle', label: primary.padEnd(6), disabled: false },
+    { id: 'skip', label: 'skip', disabled: locked },
+    { id: 'restart', label: 'reset', disabled: locked },
+    { id: 'quit', label: 'quit', disabled: false },
   ];
+}
+
+/** `text`, shortened to `width` with a mark to say that it was. */
+function clip(text: string, width: number, g: GlyphSet): string {
+  if (text.length <= width) return text;
+  if (width <= g.ellipsis.length) return text.slice(0, width);
+  return text.slice(0, width - g.ellipsis.length) + g.ellipsis;
 }
 
 function statusRow(
@@ -322,6 +346,7 @@ function statusRow(
   g: GlyphSet,
   border: string,
   mouse: boolean,
+  task: string,
   inner: number,
 ): string {
   const done = completedWorkPhases(session);
@@ -340,7 +365,13 @@ function statusRow(
   const left = dots + roundText;
   const leftWidth = dotsWidth + roundText.length;
 
+  // The task is worth more than a hint you've already read, so it wins the
+  // right-hand side outright when there is one. It gets clipped to fit rather
+  // than dropped, keeping a column back for the gap — cut it flush against the
+  // round count and the "no room for both" branch below would swallow it.
   let hint = mouse ? 'click · space s r q' : 'keys · space s r q';
+  if (task !== '') hint = clip(task, Math.max(0, inner - 3 - leftWidth), g);
+
   let gap = inner - 2 - leftWidth - hint.length;
   if (gap < 1) {
     // Not enough room for both; the round count is the part worth keeping.

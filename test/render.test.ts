@@ -3,7 +3,7 @@ import { describe, it } from 'node:test';
 
 import { bigText, bigTextWidth, DIGIT_HEIGHT } from '../src/digits.ts';
 import { hslToRgb, phaseColor, rgbToAnsi256 } from '../src/gradient.ts';
-import { UNICODE } from '../src/glyphs.ts';
+import { ASCII, UNICODE } from '../src/glyphs.ts';
 import { COMPACT, FULL, layout, render, TIERS, TINY, tooSmall, type Tier } from '../src/render.ts';
 import { buildPhases, createSession, pause, skip } from '../src/session.ts';
 
@@ -21,9 +21,62 @@ const view = (overrides: Partial<Parameters<typeof render>[0]> = {}) =>
     glyphs: UNICODE,
     hovered: null,
     mouse: true,
+    task: '',
+    strict: false,
     tier: FULL,
     ...overrides,
   });
+
+describe('strict mode', () => {
+  it('drops the hit boxes for skip and reset while focus runs', () => {
+    const ids = view({ strict: true }).hits.map((h) => h.id);
+    assert.deepEqual(ids, ['toggle', 'quit']);
+  });
+
+  it('leaves the buttons alone during a break', () => {
+    const session = skip(createSession(buildPhases(DURATIONS), T0), T0);
+    const ids = view({ session, strict: true }).hits.map((h) => h.id);
+    assert.deepEqual(ids, ['toggle', 'skip', 'restart', 'quit']);
+  });
+
+  it('leaves them alone once focus is paused', () => {
+    const session = pause(createSession(buildPhases(DURATIONS), T0), T0 + 60_000);
+    const ids = view({ session, strict: true, now: T0 + 60_000 }).hits.map((h) => h.id);
+    assert.deepEqual(ids, ['toggle', 'skip', 'restart', 'quit']);
+  });
+
+  it('still draws all four buttons, just dimmed', () => {
+    const line = view({ strict: true }).lines.map(strip).find((l) => l.includes('skip'));
+    assert.ok(line?.includes('[ skip ]'), 'the button is still on screen');
+  });
+});
+
+describe('the task label', () => {
+  it('takes the status row from the key hint', () => {
+    const status = view({ task: 'write the parser' }).lines.map(strip).at(-2) ?? '';
+    assert.ok(status.includes('write the parser'), status);
+    assert.ok(!status.includes('space s r q'), status);
+  });
+
+  it('clips a long task rather than dropping it, and says that it clipped', () => {
+    const status = view({ task: 'x'.repeat(200) }).lines.map(strip).at(-2) ?? '';
+    assert.ok(status.includes('round 1/4'), status);
+    assert.ok(status.includes('xxx'), 'the task is still there');
+    assert.ok(status.includes(UNICODE.ellipsis), 'and it admits it was cut');
+    assert.equal(status.length, FULL.width);
+  });
+
+  it('uses the ASCII mark for the clip when the glyphs are ASCII', () => {
+    const status = view({ task: 'y'.repeat(200), glyphs: ASCII }).lines.map(strip).at(-2) ?? '';
+    assert.ok(status.includes(ASCII.ellipsis), status);
+    assert.equal(status.length, FULL.width);
+  });
+
+  it('shows the hint again when there is no task', () => {
+    const status = view({ task: '' }).lines.map(strip).at(-2) ?? '';
+    assert.ok(status.includes('space s r q'), status);
+  });
+});
 
 describe('digits', () => {
   it('reports the width it actually draws', () => {
@@ -123,6 +176,8 @@ describe('render', () => {
               glyphs: UNICODE,
               hovered: 'skip',
               mouse,
+              task: '',
+              strict: false,
               tier,
             });
             assert.equal(frame.lines.length, tier.height);

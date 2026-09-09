@@ -1,13 +1,16 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { DEFAULTS, durations, parseConfig } from '../src/config.ts';
+import { DEFAULTS, durations, parseConfig, type Config } from '../src/config.ts';
 
-function run(args: string[]) {
-  const result = parseConfig(args);
+function run(args: string[], base: Config = DEFAULTS) {
+  const result = parseConfig(args, base);
   assert.equal(result.kind, 'run', `expected a runnable config, got ${result.kind}`);
   return (result as Extract<typeof result, { kind: 'run' }>).config;
 }
+
+/** What a config file would have left us, before any flags are read. */
+const stored = (overrides: Partial<Config>): Config => ({ ...DEFAULTS, ...overrides });
 
 describe('parseConfig', () => {
   it('falls back to the classic 25/5/15 x 4', () => {
@@ -49,9 +52,53 @@ describe('parseConfig', () => {
     assert.equal(parseConfig(['--turbo']).kind, 'error');
   });
 
-  it('recognises help and version', () => {
+  it('recognises help, version and the config path', () => {
     assert.equal(parseConfig(['--help']).kind, 'help');
     assert.equal(parseConfig(['-v']).kind, 'version');
+    assert.equal(parseConfig(['--config']).kind, 'config-path');
+  });
+
+  it('takes a task, trimmed, and keeps it out of the config file', () => {
+    assert.equal(run(['--task', '  write the parser  ']).task, 'write the parser');
+    assert.equal(run(['-t', 'ship it']).task, 'ship it');
+    assert.equal(run([]).task, '');
+  });
+
+  it('locks skip and reset with --strict', () => {
+    assert.equal(run([]).strict, false);
+    assert.equal(run(['--strict']).strict, true);
+  });
+});
+
+describe('parseConfig over stored settings', () => {
+  it('uses the stored values when no flag says otherwise', () => {
+    const config = run([], stored({ work: 50, rounds: 2, sound: 'bell', strict: true }));
+    assert.equal(config.work, 50);
+    assert.equal(config.rounds, 2);
+    assert.equal(config.sound, 'bell');
+    assert.equal(config.strict, true);
+  });
+
+  it('lets a flag win over the file, for this run only', () => {
+    const base = stored({ work: 50, sound: 'bell' });
+    assert.equal(run(['--work', '15'], base).work, 15);
+    assert.equal(run(['--no-sound'], base).sound, 'off');
+    // and the file is unchanged either way
+    assert.equal(base.work, 50);
+  });
+
+  it('can undo everything the file turned on', () => {
+    const base = stored({ strict: true, ascii: true, color: true, mouse: true, title: true, notify: true });
+    const config = run(['--no-strict', '--no-ascii', '--no-color', '--no-mouse', '--no-title', '--no-notify'], base);
+    assert.deepEqual(
+      [config.strict, config.ascii, config.color, config.mouse, config.title, config.notify],
+      [false, false, false, false, false, false],
+    );
+  });
+
+  it('turns things back on that the file turned off', () => {
+    assert.equal(run(['--strict'], stored({ strict: false })).strict, true);
+    assert.equal(run(['--ascii'], stored({ ascii: false })).ascii, true);
   });
 });
 

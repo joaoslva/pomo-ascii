@@ -53,7 +53,7 @@ export const HELP = `
   Controls
     click a button, or:
     space  pause / resume     s  skip phase
-    r      restart phase      q  quit        (ctrl-c also works)
+    r      reset session      q  quit        (ctrl-c also works)
 `;
 
 class ConfigError extends Error {}

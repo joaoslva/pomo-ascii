@@ -11,6 +11,8 @@ export type GlyphSet = {
   barEmpty: string;
   dotFull: string;
   dotEmpty: string;
+  /** Marks a label that had to be cut short. */
+  ellipsis: string;
   topLeft: string;
   topRight: string;
   bottomLeft: string;
@@ -25,6 +27,7 @@ export const UNICODE: GlyphSet = {
   barEmpty: '░',
   dotFull: '●',
   dotEmpty: '○',
+  ellipsis: '…',
   topLeft: '┌',
   topRight: '┐',
   bottomLeft: '└',
@@ -39,6 +42,7 @@ export const ASCII: GlyphSet = {
   barEmpty: '.',
   dotFull: '*',
   dotEmpty: 'o',
+  ellipsis: '~',
   topLeft: '+',
   topRight: '+',
   bottomLeft: '+',

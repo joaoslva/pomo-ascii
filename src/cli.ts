@@ -8,16 +8,21 @@
 import { readFileSync } from 'node:fs';
 
 import { Chime, JINGLES } from './audio.ts';
-import { durations, HELP, parseConfig } from './config.ts';
+import { DEFAULTS, durations, HELP, parseConfig } from './config.ts';
 import { detectColorMode, type ColorMode } from './gradient.ts';
 import { glyphSet } from './glyphs.ts';
+import { Notifications } from './notify.ts';
 import { layout, render, tooSmall, type ButtonId, type Hit } from './render.ts';
 import {
   buildPhases,
   completedWorkPhases,
   createSession,
+  currentPhase,
   focusedMs,
+  formatClock,
   isFinished,
+  isRunning,
+  remainingMs,
   restartSession,
   skip,
   tick,
@@ -26,6 +31,7 @@ import {
   type Phase,
   type Session,
 } from './session.ts';
+import { configPath, ensure, load } from './settings.ts';
 import { Screen, type MouseEvent } from './terminal.ts';
 
 /** Fast enough that a keypress feels instant, slow enough to cost nothing. */
@@ -48,7 +54,9 @@ function formatDuration(ms: number): string {
 }
 
 function main(): void {
-  const parsed = parseConfig(process.argv.slice(2));
+  // The file supplies the defaults; every flag then overrides them for this
+  // run only. Reading it can't fail loudly, so nothing here needs guarding.
+  const parsed = parseConfig(process.argv.slice(2), { ...DEFAULTS, ...load() });
 
   if (parsed.kind === 'help') {
     process.stdout.write(HELP);
@@ -56,6 +64,10 @@ function main(): void {
   }
   if (parsed.kind === 'version') {
     process.stdout.write(`${version()}\n`);
+    return;
+  }
+  if (parsed.kind === 'config-path') {
+    process.stdout.write(`${configPath()}\n`);
     return;
   }
   if (parsed.kind === 'error') {
@@ -72,10 +84,15 @@ function main(): void {
     return;
   }
 
+  // Only once we know we're actually running: `--help` shouldn't leave a file
+  // behind in someone's home directory.
+  const created = ensure();
+
   const mode: ColorMode = config.color ? detectColorMode() : 'none';
   const glyphs = glyphSet(config.ascii);
-  const screen = new Screen({ mouse: config.mouse });
+  const screen = new Screen({ mouse: config.mouse, title: config.title });
   const chime = new Chime(() => screen.bell());
+  const notifications = new Notifications();
 
   let session: Session = createSession(buildPhases(durations(config)), Date.now());
   let hovered: ButtonId | null = null;
@@ -89,6 +106,8 @@ function main(): void {
 
   const paint = (): void => {
     const now = Date.now();
+    screen.title(titleText(now));
+
     const { columns, rows } = screen.size();
     const tier = layout(columns, rows);
 
@@ -100,27 +119,68 @@ function main(): void {
       return;
     }
 
-    const frame = render({ session, now, mode, glyphs, hovered, mouse: screen.mouseEnabled, tier });
+    const frame = render({
+      session,
+      now,
+      mode,
+      glyphs,
+      hovered,
+      mouse: screen.mouseEnabled,
+      task: config.task,
+      strict: config.strict,
+      tier,
+    });
     hits = frame.hits;
     originRow = center(rows, tier.height);
     originCol = center(columns, tier.width);
     screen.draw(frame.lines, originRow, originCol);
   };
 
+  /** `24:13 · focus`, for a terminal that's behind another window. */
+  const titleText = (now: number): string => {
+    if (isFinished(session)) return 'pomo · done';
+    const clock = formatClock(remainingMs(session, now));
+    const kind = currentPhase(session)?.kind;
+    const label = !isRunning(session) ? 'paused' : kind === 'work' ? 'focus' : 'break';
+    return `${clock} · ${label}`;
+  };
+
   /** Focus ending and a break ending are different events; they sound it. */
   const announce = (completed: readonly Phase[]): void => {
-    if (config.sound === 'off' || completed.length === 0) return;
-    if (config.sound === 'bell') {
-      screen.bell();
-      return;
-    }
+    if (completed.length === 0) return;
+
     const name = isFinished(session)
       ? 'done'
       : completed[completed.length - 1]!.kind === 'work'
         ? 'focus'
         : 'break';
-    chime.play(name, JINGLES[name]!);
+
+    if (config.sound === 'bell') screen.bell();
+    else if (config.sound !== 'off') chime.play(name, JINGLES[name]!);
+
+    if (config.notify) notifications.send('pomo', notice(name));
   };
+
+  /** What the desktop notification says. The task, if there is one, grounds it. */
+  const notice = (name: string): string => {
+    const suffix = config.task === '' ? '' : ` — ${config.task}`;
+    if (name === 'done') {
+      const total = totalWorkPhases(session);
+      return `Session complete · ${total}/${total} rounds${suffix}`;
+    }
+    if (name === 'focus') return `Focus done, take a break${suffix}`;
+    return `Break over, back to it${suffix}`;
+  };
+
+  /**
+   * Strict mode bites only while focus is actually running — the same rule the
+   * greyed-out buttons are drawn from, so the screen can't promise otherwise.
+   */
+  const locked = (): boolean =>
+    config.strict &&
+    !isFinished(session) &&
+    currentPhase(session)?.kind === 'work' &&
+    isRunning(session);
 
   const advance = (): void => {
     const result = tick(session, Date.now());
@@ -136,9 +196,11 @@ function main(): void {
         session = isFinished(session) ? restartSession(session, now) : toggle(session, now);
         break;
       case 'skip':
+        if (locked()) return;
         session = skip(session, now);
         break;
       case 'restart':
+        if (locked()) return;
         session = restartSession(session, now);
         break;
       case 'quit':
@@ -152,7 +214,9 @@ function main(): void {
   const summary = (): string => {
     const done = completedWorkPhases(session);
     const total = totalWorkPhases(session);
-    return `pomo · ${done}/${total} rounds · ${formatDuration(focusedMs(session, Date.now()))} focused`;
+    const line = `pomo · ${done}/${total} rounds · ${formatDuration(focusedMs(session, Date.now()))} focused`;
+    // Say it once, on the way out, rather than interrupting the start.
+    return created ? `${line}\nwrote a config file at ${configPath()}` : line;
   };
 
   const shutdown = (): void => {

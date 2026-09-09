@@ -51,6 +51,9 @@ Click the buttons. Or if your hands are already on the keyboard:
 | `r` | reset the whole session |
 | `q` | quit (`ctrl-c` too) |
 
+The clock also goes in your terminal's title bar, so a window behind everything
+else still tells you how long is left. `--no-title` if you'd rather it didn't.
+
 A session is `--rounds` focus blocks with a short break after each one, then a
 long break at the end to finish. The dots in the bottom corner keep count.
 
@@ -61,13 +64,20 @@ long break at the end to finish. The dots in the bottom corner keep count.
 -b, --break <min>        short break length    (default 5)
 -l, --long-break <min>   long break length     (default 15)
 -r, --rounds <n>         focus rounds before the long break (default 4)
+-t, --task <text>        what you're working on, shown while it runs
 
     --seconds            read those durations as seconds instead of minutes
+    --strict             no skip and no reset while you're in a focus phase
     --ascii              plain ASCII instead of box drawing characters
-    --no-color           turn colour off (NO_COLOR works too)
-    --no-mouse           turn mouse tracking off
     --bell               plain terminal bell instead of the jingle
     --no-sound           silence, no jingle and no bell
+    --no-color           turn colour off (NO_COLOR works too)
+    --no-mouse           turn mouse tracking off
+    --no-title           don't put the clock in the terminal title bar
+    --no-notify          don't send desktop notifications
+    --no-ascii           --no-strict          undo any of the above
+
+    --config             print where the config file lives
 ```
 
 So if you're a 50/10 person:
@@ -81,6 +91,54 @@ And if you just want to watch the whole thing happen in under a minute:
 ```bash
 pomo --seconds --work 8 --break 4 --rounds 2
 ```
+
+## Keeping your settings
+
+Typing your flags out every time gets old, so pomo writes a config file the
+first time you run it and reads it every time after that:
+
+```bash
+pomo --config     # tells you where it is
+```
+
+It lands in `~/.config/pomo/config.json` (or wherever `XDG_CONFIG_HOME` points)
+and holds every preference, spelled out, so you can see the format without
+looking it up:
+
+```json
+{
+  "work": 25,
+  "shortBreak": 5,
+  "longBreak": 15,
+  "rounds": 4,
+  "color": true,
+  "ascii": false,
+  "mouse": true,
+  "sound": "jingle",
+  "strict": false,
+  "title": true,
+  "notify": true
+}
+```
+
+Flags still win, for that run only, so `pomo -w 50` is a one-off and the file
+keeps whatever you put in it. Every switch you can turn on in the file has a
+`--no-` flag to turn it back off for one session.
+
+Nothing in there is load-bearing. A key with a typo in it gets skipped and the
+rest of the file still applies, a file full of nonsense is treated as no file at
+all, and if pomo can't write to your home directory it just runs on the
+defaults. It should never be the reason a timer won't start.
+
+`--task` deliberately isn't in there — it's about right now, not about how you
+like your timer, so it stays a flag.
+
+## Being strict with yourself
+
+`--strict` greys out skip and reset for as long as a focus phase is running.
+Pausing still works, and breaks are left alone. It's a small thing but it turns
+the buttons from something you can reach for at minute three into something
+that isn't there.
 
 ## It fits whatever window you've got
 
@@ -136,6 +194,12 @@ handing a file to whatever your machine has: `pw-play`, `paplay`, `aplay` or
 `ffplay` on Linux, `afplay` on macOS, PowerShell on Windows. The first one that
 works is the one it keeps. If none of them do, it falls back to the bell, and
 `--bell` picks that on purpose.
+
+A sound only helps if you're there to hear it, so the end of a phase also gets
+sent to your desktop as a notification: `notify-send` or `kdialog` on Linux,
+`osascript` on macOS, a balloon tip on Windows, found the same try-it-and-see
+way the audio players are. If you gave it a `--task` it says that too. Turn it
+off with `--no-notify`.
 
 ## Stuff worth knowing
 

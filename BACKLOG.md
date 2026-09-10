@@ -7,36 +7,6 @@ Categorized depending on the effort with:
 - **M**: a bit more complex, but still manageable. Completed in an afternoon
 - **L**: more work to implement, but not necessarily humongous. Definitely needs planning and a bit of thinking beforehand
 
-## 0. Settings menu
-
-The config file part of this is done, `~/.config/pomo/config.json` gets written on
-first run and read every run after, with flags still winning for a single run.
-What's left is the good half.
-
-A menu before the session starts, showing the current values and letting you
-change them without going and finding a JSON file. Rounds, time per round, the
-sound mode, the lot. And the same menu reachable during a run, which is what
-makes the customization update below actually pleasant instead of being a
-config file with extra steps.
-
-The rule I want to keep when this lands: if any flag is passed, skip the menu
-and go straight into the timer. Bare `pomo` opens the menu, `pomo -w 50` starts
-running. Nobody who already knows what they want should have to click through a
-screen to get it, and aliases keep working.
-
-For the menu during execution, we need to decide what happens to the phase that
-is currently running when you change its length. I think the sane answer is that
-changes only apply to phases that haven't started yet, and the running one keeps
-the length it started with, otherwise the clock jumps around under you while you
-are looking at it.
-
-This is the real work of the whole page. `render.ts` today is strictly one way,
-state goes in and a frame comes out, and a menu needs to track which field has
-focus, whether you are editing it, and how to bump a number up and down. It also
-needs to write the file back, not just read it, which nothing does yet.
-
-> Workload: **M**
-
 ## 1. Customization update
 
 Two main areas targeted here
@@ -49,7 +19,11 @@ Worth doing that reshape before shipping any presets, because once themes exist 
 
 For starters, 2 or 3 more sets of pre-defined gradients would suffice, then we can create a UI for the user to create their own gradients for the phases that they desire.
 
-Maps with the new menu UI talked about in 0, moving away from having to necessarily memorize and use a lot of flags.
+The menu is already there to hang this off, and adding a setting to it is a line
+in the `FIELDS` list in `menu.ts` and nothing else, so a theme picker is a
+choice field with a list of names in it. The custom gradient editor is more than
+that, since it wants to show you the colours while you pick them, but the
+picking of a preset is nearly free now.
 
 ### Jingles
 
@@ -136,6 +110,9 @@ Write the session state out on quit and offer `pomo --resume`. The model is alre
 
 ## Done
 
+- Settings menu, on a bare `pomo` and on `m` while it runs, with a save button
+  that writes the config file
+- Notification wording lives in the config file, editable from the menu
 - Reset resets the whole session instead of just the current phase
 - Config file at `~/.config/pomo/config.json`, flags override it per run
 - `--task`, shown on the status row

@@ -11,11 +11,16 @@
  * `render` also returns the hit boxes for the clickable buttons. They're
  * derived from the same numbers that positioned the labels, so the mouse
  * targets cannot drift out of sync with what's on screen.
+ *
+ * Two screens live here, the timer and the settings menu. They share the box,
+ * the header and the button bar, and they differ in what a hit box points at,
+ * which is why `Hit` is generic over its id.
  */
 
 import { bigText, bigTextWidth, DIGIT_HEIGHT, type Scale } from './digits.ts';
 import { bold, dim, fg, invert, phaseColor, type ColorMode, type Rgb } from './gradient.ts';
 import type { GlyphSet } from './glyphs.ts';
+import { display, type Field, type Menu } from './menu.ts';
 import {
   completedWorkPhases,
   currentPhase,
@@ -33,8 +38,8 @@ import {
 export type ButtonId = 'toggle' | 'skip' | 'restart' | 'quit';
 
 /** A clickable region, in coordinates relative to the top-left of the frame. */
-export type Hit = {
-  id: ButtonId;
+export type Hit<Id = ButtonId> = {
+  id: Id;
   /** 0-based row within the frame. */
   row: number;
   /** 0-based column within the frame. */
@@ -42,9 +47,9 @@ export type Hit = {
   width: number;
 };
 
-export type Frame = {
+export type Frame<Id = ButtonId> = {
   lines: string[];
-  hits: Hit[];
+  hits: Hit<Id>[];
 };
 
 export type TierName = 'full' | 'compact' | 'tiny';
@@ -142,6 +147,72 @@ function endToEnd(
   return left + ' '.repeat(Math.max(0, width - leftWidth - rightWidth)) + right;
 }
 
+/**
+ * Each filled cell is coloured for its own position, so the bar shows the whole
+ * gradient travelled so far rather than one flat block of colour.
+ */
+function progressBar(
+  kind: PhaseKind,
+  t: number,
+  width: number,
+  g: GlyphSet,
+  mode: ColorMode,
+): string {
+  const filled = Math.round(t * width);
+  let bar = '';
+  for (let i = 0; i < filled; i++) bar += fg(g.barFull, phaseColor(kind, i / (width - 1)), mode);
+  return bar + dim(g.barEmpty.repeat(width - filled), mode);
+}
+
+type BarButton<Id> = { id: Id; label: string; disabled: boolean };
+
+/**
+ * A centred row of `[ button ]`s, and the hit boxes that go with it. Both
+ * screens draw their buttons through here, so a click lands in the same place
+ * on each and there is one place to change how a button looks.
+ */
+function buttonBar<Id>(options: {
+  buttons: readonly BarButton<Id>[];
+  hovered: (id: Id) => boolean;
+  /** `[ skip ]` rather than `[skip]`. */
+  pad: boolean;
+  inner: number;
+  /** 0-based row of this bar within the frame, for the hit boxes. */
+  row: number;
+  color: Rgb;
+  mode: ColorMode;
+}): { text: string; width: number; hits: Hit<Id>[] } {
+  const { buttons, pad, inner, mode, color } = options;
+  const plain = buttons.map((b) => (pad ? `[ ${b.label} ]` : `[${b.label}]`));
+  const width = plain.reduce((sum, b) => sum + b.length, 0) + (buttons.length - 1);
+  const [left] = padCenter(' '.repeat(width), inner);
+
+  const hits: Hit<Id>[] = [];
+  let text = '';
+  let cursor = 1 + left; // +1 for the left border column
+
+  buttons.forEach((button, i) => {
+    const label = plain[i] ?? '';
+    if (button.disabled) {
+      // Dimmed and unclickable together. A button that looks live and does
+      // nothing is worse than one that admits it's off.
+      text += dim(label, mode);
+    } else {
+      text += options.hovered(button.id)
+        ? invert(fg(label, color, mode), mode)
+        : bold(label, mode);
+      hits.push({ id: button.id, row: options.row, col: cursor, width: label.length });
+    }
+    cursor += label.length;
+    if (i < buttons.length - 1) {
+      text += ' ';
+      cursor += 1;
+    }
+  });
+
+  return { text, width, hits };
+}
+
 export function render(view: ViewState): Frame {
   if (view.tier.name === 'tiny') return renderTiny(view);
   return renderBox(view, STYLES[view.tier.name === 'full' ? 'full' : 'compact']);
@@ -184,13 +255,7 @@ function renderBox(view: ViewState, style: BoxStyle): Frame {
   // ── progress bar ─────────────────────────────────────────────────────────
   // Each filled cell is coloured for its own position, so the bar shows the
   // whole gradient travelled so far rather than one flat block of colour.
-  const filled = Math.round(t * style.barWidth);
-  let bar = '';
-  for (let i = 0; i < filled; i++) {
-    bar += fg(g.barFull, phaseColor(kind, i / (style.barWidth - 1)), mode);
-  }
-  bar += dim(g.barEmpty.repeat(style.barWidth - filled), mode);
-  lines.push(row(bar, style.barWidth));
+  lines.push(row(progressBar(kind, t, style.barWidth, g, mode), style.barWidth));
 
   if (style.spacers) lines.push(blank());
 
@@ -198,33 +263,17 @@ function renderBox(view: ViewState, style: BoxStyle): Frame {
   // Strict mode only bites while focus is actually running: pausing is still
   // allowed, and a break is nobody's test of willpower.
   const locked = view.strict && !finished && kind === 'work' && isRunning(session);
-  const buttons = buttonLabels(session, locked);
-  const buttonsPlain = buttons.map((b) => (style.padButtons ? `[ ${b.label} ]` : `[${b.label}]`));
-  const buttonsWidth = buttonsPlain.reduce((sum, b) => sum + b.length, 0) + (buttons.length - 1);
-  const [buttonsLeft] = padCenter(' '.repeat(buttonsWidth), inner);
-
-  const hits: Hit[] = [];
-  let styledButtons = '';
-  let cursor = 1 + buttonsLeft; // +1 for the left border column
-  const buttonRow = lines.length;
-  buttons.forEach((button, i) => {
-    const text = buttonsPlain[i] ?? '';
-    const hovered = view.hovered === button.id;
-    if (button.disabled) {
-      // Dimmed and unclickable together. A button that looks live and does
-      // nothing is worse than one that admits it's off.
-      styledButtons += dim(text, mode);
-    } else {
-      styledButtons += hovered ? invert(fg(text, color, mode), mode) : bold(text, mode);
-      hits.push({ id: button.id, row: buttonRow, col: cursor, width: text.length });
-    }
-    cursor += text.length;
-    if (i < buttons.length - 1) {
-      styledButtons += ' ';
-      cursor += 1;
-    }
+  const bar = buttonBar({
+    buttons: buttonLabels(session, locked),
+    hovered: (id) => view.hovered === id,
+    pad: style.padButtons,
+    inner,
+    row: lines.length,
+    color,
+    mode,
   });
-  lines.push(row(styledButtons, buttonsWidth));
+  lines.push(row(bar.text, bar.width));
+  const hits = bar.hits;
 
   // ── status ───────────────────────────────────────────────────────────────
   if (style.statusRow) {
@@ -253,20 +302,13 @@ function renderTiny(view: ViewState): Frame {
   const clock = formatClock(finished ? 0 : remainingMs(session, now));
   const label = finished ? 'done' : isRunning(session) ? SHORT_LABELS[kind] : 'paused';
 
-  const filled = Math.round(t * width);
-  let bar = '';
-  for (let i = 0; i < filled; i++) {
-    bar += fg(g.barFull, phaseColor(kind, i / (width - 1)), mode);
-  }
-  bar += dim(g.barEmpty.repeat(width - filled), mode);
-
   const rounds = `${currentRound(session)}/${totalWorkPhases(session)}`;
-  const hint = 'spc s r q';
+  const hint = 'spc s r m q';
 
   return {
     lines: [
       endToEnd(fg(clock, color, mode), clock.length, dim(label, mode), label.length, width),
-      bar,
+      progressBar(kind, t, width, g, mode),
       endToEnd(fg(rounds, color, mode), rounds.length, dim(hint, mode), hint.length, width),
     ],
     hits: [],
@@ -369,7 +411,7 @@ function statusRow(
   // right-hand side outright when there is one. It gets clipped to fit rather
   // than dropped, keeping a column back for the gap — cut it flush against the
   // round count and the "no room for both" branch below would swallow it.
-  let hint = mouse ? 'click · space s r q' : 'keys · space s r q';
+  let hint = mouse ? 'click · space s r m q' : 'keys · space s r m q';
   if (task !== '') hint = clip(task, Math.max(0, inner - 3 - leftWidth), g);
 
   let gap = inner - 2 - leftWidth - hint.length;
@@ -396,15 +438,19 @@ function statusRow(
  * fits whatever is actually there, so the "too small" notice can never itself
  * be too big. Lines come back centred against each other.
  */
-export function tooSmall(columns: number, rows: number): string[] {
+export function tooSmall(
+  columns: number,
+  rows: number,
+  need: { width: number; height: number } = TINY,
+): string[] {
   // Nothing wider than "too small" is worth listing: we only get here when the
   // terminal is under 16 columns or under 3 rows, so anything longer than that
   // would never fit in the space that made us give up in the first place.
-  const need = `need ${TINY.width}x${TINY.height}`;
+  const wanted = `need ${need.width}x${need.height}`;
   const options: string[][] = [
-    ['too small', `have ${columns}x${rows}`, need],
-    ['too small', `${columns}x${rows}`, need],
-    ['too small', need],
+    ['too small', `have ${columns}x${rows}`, wanted],
+    ['too small', `${columns}x${rows}`, wanted],
+    ['too small', wanted],
     ['too small'],
     ['!'],
   ];
@@ -416,4 +462,214 @@ export function tooSmall(columns: number, rows: number): string[] {
     return option.map((line) => ' '.repeat(padCenter(line, width)[0]) + line);
   }
   return [];
+}
+
+// ── the settings menu ──────────────────────────────────────────────────────
+
+export type MenuButtonId = 'primary' | 'save' | 'quit';
+
+/**
+ * What sits under the mouse in the menu. The label and the value of a row are
+ * separate targets because they do different things: one moves the focus, the
+ * other opens the value up for changing.
+ */
+export type MenuTarget =
+  | { kind: 'row'; index: number }
+  | { kind: 'value'; index: number }
+  | { kind: 'step'; index: number; delta: number }
+  | { kind: 'button'; id: MenuButtonId };
+
+export type MenuTier = {
+  width: number;
+  height: number;
+  /** How many field rows fit. Fewer than there are fields means it scrolls. */
+  visible: number;
+};
+
+export type MenuView = {
+  menu: Menu;
+  mode: ColorMode;
+  glyphs: GlyphSet;
+  hovered: MenuButtonId | null;
+  /** `start` before the timer has begun, `back` once it's running. */
+  primary: 'start' | 'back';
+  /** A word for the header, for saying `saved` and for admitting `not saved`. */
+  note: string | null;
+  tier: MenuTier;
+};
+
+/** Top border, buttons, hints, bottom border. Everything else is a field. */
+export const MENU_CHROME = 4;
+const MENU_MIN_VISIBLE = 3;
+/** Wide enough for `short break`, which is the longest label there is. */
+const MENU_LABEL = 11;
+const MENU_TITLE = 'settings';
+
+/**
+ * The menu is as tall as it needs to be, up to whatever the terminal has. Only
+ * the width comes in tiers — a list of settings has nothing to gain from the
+ * big digits, so it borrows the timer's two box widths and stops there.
+ */
+export function menuLayout(columns: number, rows: number, fields: number): MenuTier | null {
+  const width =
+    columns >= FULL.width ? FULL.width : columns >= COMPACT.width ? COMPACT.width : 0;
+  if (width === 0) return null;
+
+  const visible = Math.min(fields, rows - MENU_CHROME);
+  if (visible < Math.min(MENU_MIN_VISIBLE, fields)) return null;
+  return { width, height: visible + MENU_CHROME, visible };
+}
+
+/**
+ * Which slice of the list to show. Centring the focused row means the window
+ * is a function of the focus alone, so nothing here has to remember where the
+ * list was scrolled to last time.
+ */
+export function menuWindow(index: number, visible: number, total: number): number {
+  if (total <= visible) return 0;
+  const centred = index - Math.floor((visible - 1) / 2);
+  return Math.min(Math.max(0, centred), total - visible);
+}
+
+export function renderMenu(view: MenuView): Frame<MenuTarget> {
+  const { menu, mode, glyphs: g, tier } = view;
+  const inner = tier.width - 2;
+  const valueWidth = inner - MENU_LABEL - 8;
+  const accent = phaseColor('work', 0.5);
+  const border = dim(g.vertical, mode);
+
+  const lines: string[] = [];
+  const hits: Hit<MenuTarget>[] = [];
+
+  const dirty = JSON.stringify(menu.values) !== JSON.stringify(menu.saved);
+  const note = view.note ?? (dirty ? 'edited' : null);
+  lines.push(header(note ? `${MENU_TITLE} · ${note}` : MENU_TITLE, tier.width, g, mode, accent));
+
+  // ── the fields ───────────────────────────────────────────────────────────
+  const total = menu.fields.length;
+  const start = menuWindow(menu.index, tier.visible, total);
+
+  for (let i = 0; i < tier.visible; i++) {
+    const index = start + i;
+    const field = menu.fields[index];
+    if (!field) break;
+
+    const row = lines.length;
+    const isFocused = index === menu.index;
+    const editing = isFocused && menu.draft !== null;
+    const steppable = field.kind !== 'text';
+
+    const label = clip(field.label, MENU_LABEL, g).padEnd(MENU_LABEL);
+    const chevron = (glyph: string): string =>
+      !steppable ? ' ' : isFocused ? fg(glyph, accent, mode) : dim(glyph, mode);
+
+    // A marker rather than a whole inverted row: the focused line should stand
+    // out, not shout, since one of these is always focused.
+    const marker = isFocused ? fg(g.right, accent, mode) : ' ';
+
+    // The scroll marks live in the one column the layout doesn't use, so a
+    // list that scrolls costs the values nothing.
+    const scroll =
+      i === 0 && start > 0 ? dim(g.up, mode)
+      : i === tier.visible - 1 && start + tier.visible < total ? dim(g.down, mode)
+      : ' ';
+
+    lines.push(
+      border +
+        marker +
+        ' ' +
+        (isFocused ? bold(label, mode) : dim(label, mode)) +
+        ' ' +
+        chevron(g.left) +
+        ' ' +
+        valueCell(view, field, isFocused, editing, valueWidth, accent) +
+        ' ' +
+        chevron(g.right) +
+        scroll +
+        border,
+    );
+
+    hits.push({ id: { kind: 'row', index }, row, col: 1, width: MENU_LABEL + 2 });
+    hits.push({ id: { kind: 'value', index }, row, col: MENU_LABEL + 6, width: valueWidth });
+    if (steppable) {
+      hits.push({ id: { kind: 'step', index, delta: -1 }, row, col: MENU_LABEL + 4, width: 1 });
+      hits.push({
+        id: { kind: 'step', index, delta: 1 },
+        row,
+        col: MENU_LABEL + valueWidth + 7,
+        width: 1,
+      });
+    }
+  }
+
+  // ── buttons ──────────────────────────────────────────────────────────────
+  // Saving is what's greyed out when there's nothing to save, because the file
+  // is the only thing here you can't undo by walking away.
+  const bar = buttonBar<MenuButtonId>({
+    buttons: [
+      { id: 'primary', label: view.primary.padEnd(5), disabled: false },
+      { id: 'save', label: 'save', disabled: !dirty },
+      { id: 'quit', label: 'quit', disabled: false },
+    ],
+    hovered: (id) => view.hovered === id,
+    pad: tier.width === FULL.width,
+    inner,
+    row: lines.length,
+    color: accent,
+    mode,
+  });
+  const [barLeft, barRight] = padCenter(' '.repeat(bar.width), inner);
+  lines.push(border + ' '.repeat(barLeft) + bar.text + ' '.repeat(barRight) + border);
+  for (const hit of bar.hits) hits.push({ ...hit, id: { kind: 'button', id: hit.id } });
+
+  // ── hints ────────────────────────────────────────────────────────────────
+  const wide = tier.width === FULL.width;
+  const [left, right] =
+    menu.draft !== null
+      ? [wide ? 'typing' : '', 'enter ok · esc cancel']
+      : [
+          `${g.up}${g.down} ${g.left}${g.right}`,
+          wide ? `space edit · s save · enter ${view.primary}` : `enter ${view.primary}`,
+        ];
+  lines.push(
+    border +
+      ' ' +
+      endToEnd(dim(left, mode), left.length, dim(right, mode), right.length, inner - 2) +
+      ' ' +
+      border,
+  );
+
+  lines.push(dim(g.bottomLeft + g.horizontal.repeat(inner) + g.bottomRight, mode));
+
+  return { lines, hits };
+}
+
+/** The value, padded to its column, and marked up for whatever state it's in. */
+function valueCell(
+  view: MenuView,
+  field: Field,
+  isFocused: boolean,
+  editing: boolean,
+  width: number,
+  accent: Rgb,
+): string {
+  const { menu, mode, glyphs: g } = view;
+  const text = display(menu, field);
+
+  if (editing) {
+    // Keep the caret in sight by showing the tail of anything too long: you
+    // care about the character you just typed, not the one you typed first.
+    const room = Math.max(0, width - 1);
+    const shown = text.length > room ? text.slice(text.length - room) : text;
+    return (
+      fg(shown, accent, mode) +
+      invert(' ', mode) +
+      ' '.repeat(Math.max(0, width - shown.length - 1))
+    );
+  }
+
+  const shown = clip(text, width, g);
+  const padding = ' '.repeat(Math.max(0, width - shown.length));
+  if (isFocused) return fg(shown, accent, mode) + padding;
+  return shown + padding;
 }

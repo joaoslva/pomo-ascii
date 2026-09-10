@@ -37,7 +37,36 @@ const TITLE_POP = `${ESC}[23;2t`;
 const setTitle = (text: string): string => `${ESC}]2;${text}\x07`;
 
 const SGR_MOUSE = /^\x1b\[<(\d+);(\d+);(\d+)([Mm])/;
-const UNKNOWN_ESCAPE = /^\x1b\[[\d;?<>]*[A-Za-z~]/;
+const UNKNOWN_ESCAPE = /^\x1b(\[|O)[\d;?<>]*[A-Za-z~]/;
+
+/**
+ * The keys that aren't characters. Handlers get either a single character or
+ * one of these names, and since every name is longer than one character the
+ * two can never be confused for each other.
+ *
+ * Both encodings of the arrows are here: terminals send `ESC [ A` normally and
+ * `ESC O A` in application cursor mode, and which one you get depends on the
+ * terminal rather than on anything we asked for.
+ */
+const NAMED_KEYS: Record<string, string> = {
+  '\x1b[A': 'up', '\x1bOA': 'up',
+  '\x1b[B': 'down', '\x1bOB': 'down',
+  '\x1b[C': 'right', '\x1bOC': 'right',
+  '\x1b[D': 'left', '\x1bOD': 'left',
+  '\x1b[1;2C': 'shift-right', '\x1b[1;2D': 'shift-left',
+  '\x1b[Z': 'shift-tab',
+  '\x1b[3~': 'delete',
+  '\r': 'enter', '\n': 'enter',
+  '\t': 'tab',
+  '\x7f': 'backspace', '\x08': 'backspace',
+};
+
+/**
+ * How long a lone ESC waits to find out whether it was the start of something.
+ * Nothing else in here needs a timer, but the alternative is an escape key that
+ * only lands once you press another one.
+ */
+const ESCAPE_MS = 40;
 
 export type MouseEvent = {
   kind: 'press' | 'release' | 'move';
@@ -56,14 +85,17 @@ export type Handlers = {
 export type Size = { columns: number; rows: number };
 
 export class Screen {
-  readonly #wantMouse: boolean;
   readonly #out = process.stdout;
   readonly #in = process.stdin;
 
-  readonly #wantTitle: boolean;
+  // Both of these can change while the app is running, because the settings
+  // menu can change them, so neither is a constructor-and-forget flag.
+  #wantMouse: boolean;
+  #wantTitle: boolean;
 
   #handlers: Handlers | null = null;
   #buffer = '';
+  #escapeTimer: NodeJS.Timeout | null = null;
   #mouseEnabled = false;
   #started = false;
   #lastFrame: string | null = null;
@@ -76,6 +108,28 @@ export class Screen {
 
   get mouseEnabled(): boolean {
     return this.#mouseEnabled;
+  }
+
+  /** Turns mouse tracking on or off after the fact. */
+  setMouse(on: boolean): void {
+    this.#wantMouse = on;
+    if (!this.#started || on === this.#mouseEnabled) return;
+    this.#out.write(on ? MOUSE_ON : MOUSE_OFF);
+    this.#mouseEnabled = on;
+  }
+
+  /**
+   * Same, for the title bar. Turning it off pops the title the terminal had
+   * before us, which is the only way to put a title back where we found it.
+   */
+  setTitleBar(on: boolean): void {
+    if (!this.#started || on === this.#wantTitle) {
+      this.#wantTitle = on;
+      return;
+    }
+    this.#out.write(on ? TITLE_PUSH : TITLE_POP);
+    this.#wantTitle = on;
+    this.#lastTitle = null;
   }
 
   /**
@@ -146,6 +200,8 @@ export class Screen {
 
     process.removeListener('SIGWINCH', this.#onResize);
     this.#in.removeListener('data', this.#onData);
+    if (this.#escapeTimer) clearTimeout(this.#escapeTimer);
+    this.#escapeTimer = null;
 
     if (this.#mouseEnabled) this.#out.write(MOUSE_OFF);
     if (this.#wantTitle) this.#out.write(TITLE_POP);
@@ -165,6 +221,10 @@ export class Screen {
   };
 
   #onData = (chunk: string): void => {
+    if (this.#escapeTimer) {
+      clearTimeout(this.#escapeTimer);
+      this.#escapeTimer = null;
+    }
     this.#buffer += chunk;
 
     while (this.#buffer.length > 0) {
@@ -176,6 +236,13 @@ export class Screen {
       }
 
       if (this.#buffer.startsWith(ESC)) {
+        const named = this.#named();
+        if (named) {
+          this.#buffer = this.#buffer.slice(named.length);
+          this.#handlers?.onKey(NAMED_KEYS[named]!);
+          continue;
+        }
+
         const unknown = UNKNOWN_ESCAPE.exec(this.#buffer);
         if (unknown) {
           this.#buffer = this.#buffer.slice(unknown[0].length);
@@ -190,9 +257,31 @@ export class Screen {
 
       const key = this.#buffer[0]!;
       this.#buffer = this.#buffer.slice(1);
-      this.#handlers?.onKey(key);
+      this.#handlers?.onKey(NAMED_KEYS[key] ?? key);
+    }
+
+    // A buffer holding nothing but ESC is either the escape key or the first
+    // byte of a sequence still in flight. Waiting a moment tells us which.
+    if (this.#buffer === ESC) {
+      this.#escapeTimer = setTimeout(() => {
+        this.#escapeTimer = null;
+        if (this.#buffer !== ESC) return;
+        this.#buffer = '';
+        this.#handlers?.onKey('escape');
+      }, ESCAPE_MS);
+      this.#escapeTimer.unref();
     }
   };
+
+  /** The longest named sequence the buffer currently starts with. */
+  #named(): string | null {
+    let best: string | null = null;
+    for (const sequence of Object.keys(NAMED_KEYS)) {
+      if (!this.#buffer.startsWith(sequence)) continue;
+      if (best === null || sequence.length > best.length) best = sequence;
+    }
+    return best;
+  }
 
   #emitMouse(flags: number, col: number, row: number, pressed: boolean): void {
     const kind: MouseEvent['kind'] =

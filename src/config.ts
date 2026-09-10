@@ -3,6 +3,13 @@ import { parseArgs } from 'node:util';
 /** How the end of a phase is announced. */
 export type SoundMode = 'jingle' | 'bell' | 'off';
 
+/** What the desktop notification says, per event. The task is appended. */
+export type Messages = {
+  focus: string;
+  break: string;
+  done: string;
+};
+
 export type Config = {
   work: number;
   shortBreak: number;
@@ -20,6 +27,9 @@ export type Config = {
   title: boolean;
   /** Ask the desktop to show a notification when a phase ends. */
   notify: boolean;
+  /** Open the settings menu on a bare `pomo`, rather than starting the timer. */
+  menu: boolean;
+  messages: Messages;
   /** What you're working on. Shown on the status row; per-run, so flag only. */
   task: string;
 };
@@ -37,6 +47,12 @@ export const DEFAULTS: Config = {
   strict: false,
   title: true,
   notify: true,
+  menu: true,
+  messages: {
+    focus: 'Focus done, take a break',
+    break: 'Break over, back to it',
+    done: 'Session complete',
+  },
   task: '',
 };
 
@@ -64,6 +80,8 @@ export const HELP = `
         --no-notify          don't send desktop notifications
         --no-ascii           --no-strict          undo the above
 
+        --menu               open the settings menu, even alongside flags
+        --no-menu            start the timer straight away
         --config             print the path of the config file
     -h, --help               show this
     -v, --version            print the version
@@ -71,11 +89,17 @@ export const HELP = `
   Config
     Preferences are read from ~/.config/pomo/config.json, written with the
     defaults the first time pomo runs. Flags win over the file for one run.
+    A bare \`pomo\` opens the settings menu; passing any flag skips it.
 
   Controls
     click a button, or:
     space  pause / resume     s  skip phase
-    r      reset session      q  quit        (ctrl-c also works)
+    r      reset session      m  settings
+    q      quit               (ctrl-c also works)
+
+  In the menu
+    up/down  move             left/right  change
+    space    edit a value     enter       start
 `;
 
 class ConfigError extends Error {}
@@ -89,7 +113,7 @@ function positiveInt(raw: string, flag: string): number {
 }
 
 export type ParseResult =
-  | { kind: 'run'; config: Config }
+  | { kind: 'run'; config: Config; menu: boolean }
   | { kind: 'help' }
   | { kind: 'version' }
   | { kind: 'config-path' }
@@ -114,6 +138,7 @@ export function parseConfig(argv: readonly string[], base: Config = DEFAULTS): P
         seconds: { type: 'boolean' },
         ascii: { type: 'boolean' },
         strict: { type: 'boolean' },
+        menu: { type: 'boolean' },
         // node:util's parseArgs has no --no-x negation, so the off switches
         // are declared as their own flags.
         'no-ascii': { type: 'boolean' },
@@ -123,6 +148,7 @@ export function parseConfig(argv: readonly string[], base: Config = DEFAULTS): P
         'no-sound': { type: 'boolean' },
         'no-title': { type: 'boolean' },
         'no-notify': { type: 'boolean' },
+        'no-menu': { type: 'boolean' },
         // --no-bell is what --no-sound used to be called.
         'no-bell': { type: 'boolean' },
         bell: { type: 'boolean' },
@@ -162,14 +188,32 @@ export function parseConfig(argv: readonly string[], base: Config = DEFAULTS): P
       mouse: flip(undefined, values['no-mouse'], base.mouse),
       title: flip(undefined, values['no-title'], base.title),
       notify: flip(undefined, values['no-notify'], base.notify),
+      menu: flip(values.menu, values['no-menu'], base.menu),
       sound: soundMode(values, base.sound),
+      messages: base.messages,
       task: values.task?.trim() ?? base.task,
     };
-    return { kind: 'run', config };
+    return { kind: 'run', config, menu: showMenu(values, argv, base.menu) };
   } catch (error) {
     if (error instanceof ConfigError) return { kind: 'error', message: error.message };
     throw error;
   }
+}
+
+/**
+ * Whether to open the menu before the timer, which is not the same question as
+ * `config.menu`: anyone who typed a flag has already said what they want, so
+ * they get the timer and not a screen to click through. `--menu` is there for
+ * the one case that rule gets wrong, wanting the menu *and* a task label.
+ */
+function showMenu(
+  values: { menu?: boolean; 'no-menu'?: boolean },
+  argv: readonly string[],
+  stored: boolean,
+): boolean {
+  if (values.menu) return true;
+  if (values['no-menu']) return false;
+  return argv.length === 0 && stored;
 }
 
 function soundMode(

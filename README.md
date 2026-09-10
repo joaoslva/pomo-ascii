@@ -18,7 +18,7 @@ npm as [`pomo-ascii`](https://www.npmjs.com/package/pomo-ascii)
 │    ███████████░░░░░░░░░░░░░░░░░░░░░░░    │
 │                                          │
 │  [ pause  ] [ skip ] [ reset ] [ quit ]  │
-│ ○○○○ round 1/4       click · space s r q │
+│ ○○○○ round 1/4     click · space s r m q │
 └──────────────────────────────────────────┘
 ```
 
@@ -38,7 +38,13 @@ Or keep it around:
 npm install -g pomo-ascii
 ```
 
-Then just `pomo`.
+Then just `pomo`. That opens a settings menu where you can set the lengths and
+everything else, and `enter` starts the timer. If you already know what you
+want, pass a flag and it skips straight to the clock.
+
+```bash
+pomo --work 50 --break 10 --rounds 3
+```
 
 ## Using it
 
@@ -49,225 +55,31 @@ Click the buttons. Or if your hands are already on the keyboard:
 | `space` | pause / resume |
 | `s` | skip to the next phase |
 | `r` | reset the whole session |
+| `m` | open the settings menu |
 | `q` | quit (`ctrl-c` too) |
 
-The clock also goes in your terminal's title bar, so a window behind everything
-else still tells you how long is left. `--no-title` if you'd rather it didn't.
-
 A session is `--rounds` focus blocks with a short break after each one, then a
-long break at the end to finish. The dots in the bottom corner keep count.
+long break at the end to finish. The dots in the bottom corner keep count. The
+clock goes in your terminal's title bar too, so a window behind everything else
+still tells you how long is left.
 
-## Options
+Your settings live in `~/.config/pomo/config.json`, written the first time you
+run it. Flags win over the file, for that run only. `pomo --config` tells you
+where the file is.
 
-```
--w, --work <min>         focus length          (default 25)
--b, --break <min>        short break length    (default 5)
--l, --long-break <min>   long break length     (default 15)
--r, --rounds <n>         focus rounds before the long break (default 4)
--t, --task <text>        what you're working on, shown while it runs
+## Docs
 
-    --seconds            read those durations as seconds instead of minutes
-    --strict             no skip and no reset while you're in a focus phase
-    --ascii              plain ASCII instead of box drawing characters
-    --bell               plain terminal bell instead of the jingle
-    --no-sound           silence, no jingle and no bell
-    --no-color           turn colour off (NO_COLOR works too)
-    --no-mouse           turn mouse tracking off
-    --no-title           don't put the clock in the terminal title bar
-    --no-notify          don't send desktop notifications
-    --no-ascii           --no-strict          undo any of the above
+The long version is in [`docs/`](docs/).
 
-    --config             print where the config file lives
-```
-
-So if you're a 50/10 person:
-
-```bash
-pomo --work 50 --break 10 --rounds 3
-```
-
-And if you just want to watch the whole thing happen in under a minute:
-
-```bash
-pomo --seconds --work 8 --break 4 --rounds 2
-```
-
-## Keeping your settings
-
-Typing your flags out every time gets old, so pomo writes a config file the
-first time you run it and reads it every time after that:
-
-```bash
-pomo --config     # tells you where it is
-```
-
-It lands in `~/.config/pomo/config.json` (or wherever `XDG_CONFIG_HOME` points)
-and holds every preference, spelled out, so you can see the format without
-looking it up:
-
-```json
-{
-  "work": 25,
-  "shortBreak": 5,
-  "longBreak": 15,
-  "rounds": 4,
-  "color": true,
-  "ascii": false,
-  "mouse": true,
-  "sound": "jingle",
-  "strict": false,
-  "title": true,
-  "notify": true
-}
-```
-
-Flags still win, for that run only, so `pomo -w 50` is a one-off and the file
-keeps whatever you put in it. Every switch you can turn on in the file has a
-`--no-` flag to turn it back off for one session.
-
-Nothing in there is load-bearing. A key with a typo in it gets skipped and the
-rest of the file still applies, a file full of nonsense is treated as no file at
-all, and if pomo can't write to your home directory it just runs on the
-defaults. It should never be the reason a timer won't start.
-
-`--task` deliberately isn't in there — it's about right now, not about how you
-like your timer, so it stays a flag.
-
-## Being strict with yourself
-
-`--strict` greys out skip and reset for as long as a focus phase is running.
-Pausing still works, and breaks are left alone. It's a small thing but it turns
-the buttons from something you can reach for at minute three into something
-that isn't there.
-
-## It fits whatever window you've got
-
-The box comes in three sizes and it picks the biggest one your terminal can
-hold, re-picking it the moment you drag the window. Nothing stretches — a
-progress bar 200 columns wide is not an improvement — so a big terminal just
-gets the box centred in it.
-
-At 34×9 the spacing goes, the digits get thin, the round count moves up into the
-title bar and the buttons lose their padding:
-
-```
-┌─ pomo ───────────── focus 1/4 ─┐
-│        █  ███   █ █ ███        │
-│       ██  █   █ █ █ █ █        │
-│        █  ███   ███ █ █        │
-│        █  █ █ █   █ █ █        │
-│       ███ ███     █ ███        │
-│   █████████░░░░░░░░░░░░░░░░░   │
-│ [pause ] [skip] [reset] [quit] │
-└────────────────────────────────┘
-```
-
-At 16×3 there's no room for a border, never mind a button, so it drops to three
-bare lines. The keys still work:
-
-```
-16:40      focus
-█████░░░░░░░░░░░
-1/4    spc s r q
-```
-
-Below that there is nothing honest left to draw, so it says so instead:
-
-```
-too small
-have 12x4
-need 16x3
-```
-
-## The noise it makes
-
-One terminal bell is easy to miss — plenty of terminals mute it, or turn it
-into a flash — which is not much use for telling you a focus block just ended.
-So `pomo` synthesises a short jingle instead: a rising four-note run when focus
-ends, two lower notes when a break does, and something a bit more pleased with
-itself when the whole session is over.
-
-The notes are just data, a list of frequencies and durations, which is the
-groundwork for making them yours in a later release. There's still nothing in
-`node_modules` — the WAV is generated in memory — but playing it does mean
-handing a file to whatever your machine has: `pw-play`, `paplay`, `aplay` or
-`ffplay` on Linux, `afplay` on macOS, PowerShell on Windows. The first one that
-works is the one it keeps. If none of them do, it falls back to the bell, and
-`--bell` picks that on purpose.
-
-A sound only helps if you're there to hear it, so the end of a phase also gets
-sent to your desktop as a notification: `notify-send` or `kdialog` on Linux,
-`osascript` on macOS, a balloon tip on Windows, found the same try-it-and-see
-way the audio players are. If you gave it a `--task` it says that too. Turn it
-off with `--no-notify`.
-
-## Stuff worth knowing
-
-It runs on the alternate screen, the way `top` and `less` do, so your scrollback
-comes back untouched when you quit. What it leaves behind is a single line
-telling you what you actually got done:
-
-```
-pomo · 3/4 rounds · 1h 15m focused
-```
-
-Mouse tracking does steal your text selection while it's running, which is
-annoying but it's just how terminals work. Hold `shift` while you drag and you
-can select anyway in most of them, or run `--no-mouse` if you'd rather not.
-
-Colour sorts itself out — 24-bit if your terminal advertises it, the 256-colour
-palette otherwise, and no colour at all if you pipe it somewhere or set
-`NO_COLOR`.
-
-## Poking at it
-
-You need Node 22.18+ to hack on it, because `npm run dev` and `npm test` just
-run the TypeScript straight up using Node's built-in type stripping. No build
-step, no loader, no `ts-node`. (The published thing is plain JS in `dist/` and
-runs on Node 20 fine.) There's a `mise.toml` if you use mise.
-
-Nothing at runtime, and only TypeScript and its types to develop with.
-
-```bash
-npm install
-npm run dev        # runs from src/, no build
-npm test
-npm run typecheck
-npm run build      # -> dist/
-```
-
-Everything except two files is pure functions, which is the whole reason the
-tests don't need a terminal or a fake clock or a single mock:
-
-| file | what it does |
+| page | what's in it |
 | --- | --- |
-| `src/session.ts` | the timer, as a state machine |
-| `src/render.ts` | state goes in, a frame and some button boxes come out |
-| `src/gradient.ts` | turns progress into a colour |
-| `src/digits.ts` | the little 5-row font |
-| `src/glyphs.ts` | the two character sets |
-| `src/config.ts` | flags |
-| `src/audio.ts` | synthesises the jingle and finds something to play it |
-| `src/terminal.ts` | raw mode, escape codes, mouse, cleanup — all the mess |
-| `src/cli.ts` | glues it together, owns the process |
-
-Three things to know before you change anything.
-
-Nothing counts ticks. The session remembers when it last resumed and works out
-the rest from `Date.now()`, because intervals drift and laptops go to sleep, and
-you don't want a lid closed for an hour to add an hour to your pomodoro. If a
-tick shows up late, the overshoot gets rolled into the next phase instead of
-being handed to you as free time.
-
-The clickable regions come out of `render()` along with the lines, worked out
-from the same numbers that placed the labels. That way the buttons can't end up
-somewhere different from where they're drawn.
-
-And every frame is written at an absolute position that `cli.ts` chose, never
-relative to wherever the cursor happened to stop. That's what makes a resize
-safe: the layout is recomputed, the screen is cleared, and the new frame lands
-somewhere known. It's also why clicking works everywhere — the app never has to
-ask the terminal where the cursor is.
+| [Using it](docs/usage.md) | every flag, every key, and what a session actually does |
+| [Settings](docs/settings.md) | the config file and the menu that edits it |
+| [Layout](docs/layout.md) | the three box sizes, the digit font, the two glyph sets |
+| [Colour](docs/colour.md) | the gradient, and how it decides what your terminal can do |
+| [Sound](docs/sound.md) | synthesising the jingle, and the desktop notifications |
+| [Internals](docs/internals.md) | how the modules fit together, with the reasoning |
+| [Hacking on it](docs/hacking.md) | dev setup, the tests, the build |
 
 ## Licence
 

@@ -13,12 +13,14 @@ import {
   pause,
   progress,
   remainingMs,
+  reshape,
   restartPhase,
   restartSession,
   resume,
   skip,
   tick,
   toggle,
+  totalWorkPhases,
 } from '../src/session.ts';
 
 const DURATIONS = { work: 25 * 60, shortBreak: 5 * 60, longBreak: 15 * 60, rounds: 4 };
@@ -183,5 +185,56 @@ describe('progress and counters', () => {
     session = skip(session, T0); // into the first break
     assert.equal(completedWorkPhases(session), 1);
     assert.equal(currentRound(session), 2);
+  });
+});
+
+describe('reshape', () => {
+  const shorter = { work: 10 * 60, shortBreak: 60, longBreak: 5 * 60, rounds: 4 };
+
+  it('leaves the phase you are watching at the length it started with', () => {
+    const session = reshape(createSession(buildPhases(DURATIONS), T0), shorter);
+    assert.equal(currentPhase(session)?.seconds, 25 * 60);
+    assert.equal(session.phases[1]?.seconds, 60);
+  });
+
+  it('keeps the clock exactly where it was', () => {
+    const running = createSession(buildPhases(DURATIONS), T0);
+    const session = reshape(running, shorter);
+    assert.equal(remainingMs(session, T0 + 60_000), remainingMs(running, T0 + 60_000));
+    assert.equal(session.index, running.index);
+  });
+
+  it('changes the phases that have not started, wherever you are in the queue', () => {
+    const started = skip(skip(createSession(buildPhases(DURATIONS), T0), T0), T0);
+    const session = reshape(started, shorter);
+    assert.equal(session.phases[1]?.seconds, 5 * 60, 'the break already behind us');
+    assert.equal(session.phases[2]?.seconds, 25 * 60, 'the phase we are in');
+    assert.equal(session.phases[3]?.seconds, 60, 'the one after it');
+  });
+
+  it('moves the long break when the number of rounds moves', () => {
+    const session = reshape(createSession(buildPhases(DURATIONS), T0), { ...DURATIONS, rounds: 2 });
+    assert.deepEqual(session.phases.map((p) => p.kind), [
+      'work', 'short-break', 'work', 'long-break',
+    ]);
+    assert.equal(totalWorkPhases(session), 2);
+  });
+
+  it('cuts the session short when there are fewer rounds than you have done', () => {
+    let session = createSession(buildPhases(DURATIONS), T0);
+    for (let i = 0; i < 6; i++) session = skip(session, T0);
+    session = reshape(session, { ...DURATIONS, rounds: 2 });
+    assert.equal(isFinished(session), false, 'the phase you are in still finishes');
+    assert.equal(session.phases.length, 7);
+  });
+
+  it('leaves a finished session finished, ready to start again on the new shape', () => {
+    let session = createSession(buildPhases(DURATIONS), T0);
+    for (let i = 0; i < 8; i++) session = skip(session, T0);
+    assert.equal(isFinished(session), true);
+
+    session = reshape(session, { ...DURATIONS, rounds: 2 });
+    assert.equal(isFinished(session), true);
+    assert.equal(totalWorkPhases(restartSession(session, T0)), 2);
   });
 });

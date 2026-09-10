@@ -5,7 +5,16 @@ import { join } from 'node:path';
 import { after, describe, it } from 'node:test';
 
 import { DEFAULTS } from '../src/config.ts';
-import { configDir, configPath, ensure, load, sanitize, serialize } from '../src/settings.ts';
+import {
+  configDir,
+  configPath,
+  ensure,
+  load,
+  sanitize,
+  save,
+  serialize,
+  toStored,
+} from '../src/settings.ts';
 
 const scratch = mkdtempSync(join(tmpdir(), 'pomo-settings-'));
 after(() => rmSync(scratch, { recursive: true, force: true }));
@@ -70,7 +79,7 @@ describe('serialize', () => {
   it('writes every stored key, so the file documents its own format', () => {
     const parsed = JSON.parse(serialize(DEFAULTS)) as Record<string, unknown>;
     assert.deepEqual(Object.keys(parsed).sort(), [
-      'ascii', 'color', 'longBreak', 'mouse', 'notify',
+      'ascii', 'color', 'longBreak', 'menu', 'messages', 'mouse', 'notify',
       'rounds', 'shortBreak', 'sound', 'strict', 'title', 'work',
     ]);
   });
@@ -119,5 +128,69 @@ describe('ensure', () => {
     const blocker = fresh('blocker');
     ensure(blocker);
     assert.equal(ensure(join(blocker, 'nested', 'config.json')), false);
+  });
+});
+
+describe('the notification messages', () => {
+  it('keeps the ones it is given and defaults the rest', () => {
+    const clean = sanitize({ messages: { focus: 'Go and stretch' } });
+    assert.deepEqual(clean.messages, { ...DEFAULTS.messages, focus: 'Go and stretch' });
+  });
+
+  it('drops blanks, and anything that is not a string', () => {
+    assert.deepEqual(sanitize({ messages: { focus: '   ', break: 7 } }), {});
+    assert.deepEqual(sanitize({ messages: 'nope' }), {});
+    assert.deepEqual(sanitize({ messages: [] }), {});
+  });
+
+  it('trims, and cuts anything a notification would not show anyway', () => {
+    const long = 'x'.repeat(200);
+    const clean = sanitize({ messages: { done: `  ${long}  ` } });
+    assert.equal(clean.messages?.done.length, 60);
+  });
+
+  it('says nothing about messages when the file says nothing', () => {
+    assert.equal('messages' in sanitize({ work: 30 }), false);
+  });
+});
+
+describe('save', () => {
+  it('writes the settings and reads them back', () => {
+    const path = fresh();
+    assert.equal(save(path, { ...toStored(DEFAULTS), work: 50, rounds: 2 }), true);
+    assert.equal(load(path).work, 50);
+    assert.equal(load(path).rounds, 2);
+  });
+
+  it('leaves keys it does not know alone', () => {
+    const path = fresh();
+    ensure(path);
+    writeFileSync(path, JSON.stringify({ work: 25, experiment: { hue: 200 } }));
+    save(path, { ...toStored(DEFAULTS), work: 50 });
+    const raw = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
+    assert.deepEqual(raw['experiment'], { hue: 200 });
+    assert.equal(raw['work'], 50);
+  });
+
+  it('overwrites a file that was already there', () => {
+    const path = fresh();
+    save(path, { ...toStored(DEFAULTS), work: 50 });
+    save(path, { ...toStored(DEFAULTS), work: 15 });
+    assert.equal(load(path).work, 15);
+  });
+
+  it('reports failure rather than throwing when it cannot write', () => {
+    const blocker = fresh('blocker');
+    ensure(blocker);
+    assert.equal(save(join(blocker, 'nested', 'config.json'), toStored(DEFAULTS)), false);
+  });
+});
+
+describe('toStored', () => {
+  it('takes the settings that belong in the file and no others', () => {
+    const stored = toStored({ ...DEFAULTS, task: 'per-run', seconds: true });
+    assert.equal('task' in stored, false);
+    assert.equal('seconds' in stored, false);
+    assert.equal(stored.work, DEFAULTS.work);
   });
 });

@@ -129,6 +129,22 @@ export function restartSession(s: Session, now: number): Session {
 }
 
 /**
+ * New phase lengths, applied to the phases that haven't started yet.
+ *
+ * The running phase keeps the length it started with, on purpose: changing it
+ * under someone who is watching the clock would make the number jump, and the
+ * one thing a timer has to be is believable. Everything after it comes from a
+ * freshly built queue, so changing `rounds` moves the long break too.
+ */
+export function reshape(s: Session, d: PhaseDurations): Session {
+  const rebuilt = buildPhases(d);
+  // A finished session has nothing left to reshape, but it does have an
+  // "again" button, and that should start the session you just described.
+  if (isFinished(s)) return { ...s, phases: rebuilt, index: rebuilt.length };
+  return { ...s, phases: [...s.phases.slice(0, s.index + 1), ...rebuilt.slice(s.index + 1)] };
+}
+
+/**
  * Advance past every phase whose time is up. Returns the phases that just
  * ended so the caller can ring the bell — plural because a long sleep can
  * blow through more than one.

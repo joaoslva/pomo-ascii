@@ -102,6 +102,51 @@ describe('parseConfig over stored settings', () => {
   });
 });
 
+describe('whether the menu opens first', () => {
+  const opens = (args: string[], base: Config = DEFAULTS) => {
+    const result = parseConfig(args, base);
+    assert.equal(result.kind, 'run');
+    return (result as Extract<typeof result, { kind: 'run' }>).menu;
+  };
+
+  it('opens on a bare pomo', () => {
+    assert.equal(opens([]), true);
+  });
+
+  it('gets out of the way of anyone who typed a flag', () => {
+    assert.equal(opens(['--work', '50']), false);
+    assert.equal(opens(['--task', 'ship it']), false);
+  });
+
+  it('stays shut when the file says so', () => {
+    assert.equal(opens([], stored({ menu: false })), false);
+  });
+
+  it('comes back for --menu, flags or no flags', () => {
+    assert.equal(opens(['--menu']), true);
+    assert.equal(opens(['--menu', '--work', '50']), true);
+    assert.equal(opens(['--menu'], stored({ menu: false })), true);
+  });
+
+  it('goes away for --no-menu', () => {
+    assert.equal(opens(['--no-menu']), false);
+  });
+
+  it('is a stored setting as well as a flag', () => {
+    assert.equal(run([]).menu, true);
+    assert.equal(run(['--no-menu']).menu, false);
+    assert.equal(run(['--menu'], stored({ menu: false })).menu, true);
+  });
+});
+
+describe('the notification messages', () => {
+  it('come from the file, since there is no flag for them', () => {
+    const messages = { focus: 'Stretch', break: 'Sit', done: 'Finished' };
+    assert.deepEqual(run([], stored({ messages })).messages, messages);
+    assert.deepEqual(run([]).messages, DEFAULTS.messages);
+  });
+});
+
 describe('durations', () => {
   it('reads the flags as minutes by default', () => {
     const d = durations(run([]));

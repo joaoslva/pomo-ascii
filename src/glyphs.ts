@@ -13,6 +13,14 @@ export type GlyphSet = {
   dotEmpty: string;
   /** Marks a label that had to be cut short. */
   ellipsis: string;
+  /** The menu's nudge handles, either side of a value. */
+  left: string;
+  right: string;
+  /** Says the menu has more rows above or below the ones on screen. */
+  up: string;
+  down: string;
+  /** Where the next typed character will land. */
+  caret: string;
   topLeft: string;
   topRight: string;
   bottomLeft: string;
@@ -28,6 +36,11 @@ export const UNICODE: GlyphSet = {
   dotFull: '●',
   dotEmpty: '○',
   ellipsis: '…',
+  left: '‹',
+  right: '›',
+  up: '↑',
+  down: '↓',
+  caret: '▏',
   topLeft: '┌',
   topRight: '┐',
   bottomLeft: '└',
@@ -43,6 +56,11 @@ export const ASCII: GlyphSet = {
   dotFull: '*',
   dotEmpty: 'o',
   ellipsis: '~',
+  left: '<',
+  right: '>',
+  up: '^',
+  down: 'v',
+  caret: '_',
   topLeft: '+',
   topRight: '+',
   bottomLeft: '+',

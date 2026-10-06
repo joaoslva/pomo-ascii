@@ -5,15 +5,18 @@ import { bigText, bigTextWidth, DIGIT_HEIGHT } from '../src/digits.ts';
 import { hslToRgb, phaseColor, rgbToAnsi256 } from '../src/gradient.ts';
 import { ASCII, UNICODE } from '../src/glyphs.ts';
 import { DEFAULTS } from '../src/config.ts';
+import { createHome, cycle } from '../src/home.ts';
 import { createMenu, FIELDS, move, step, write } from '../src/menu.ts';
 import {
   COMPACT,
   FULL,
+  homeLayout,
   layout,
   MENU_CHROME,
   menuLayout,
   menuWindow,
   render,
+  renderHome,
   renderMenu,
   TIERS,
   TINY,
@@ -325,7 +328,6 @@ const menuView = (overrides: Partial<Parameters<typeof renderMenu>[0]> = {}) => 
     mode: 'truecolor' as const,
     glyphs: UNICODE,
     hovered: null,
-    primary: 'start' as const,
     note: null,
     tier: menuLayout(80, 40, menu.fields.length)!,
     ...overrides,
@@ -426,9 +428,8 @@ describe('the menu', () => {
     );
   });
 
-  it('calls the first button start before the timer and back once it runs', () => {
-    assert.ok(strip(menuView().lines.at(-3)!).includes('[ start ]'));
-    assert.ok(strip(menuView({ primary: 'back' }).lines.at(-3)!).includes('[ back'));
+  it('goes back, since starting is a job for the start screen', () => {
+    assert.ok(strip(menuView().lines.at(-3)!).includes('[ back ]'));
   });
 
   it('marks a list that scrolls, at whichever end has more', () => {
@@ -441,7 +442,7 @@ describe('the menu', () => {
   });
 
   it('tells you what the keys do, and what they do while you are typing', () => {
-    assert.ok(strip(menuView().lines.at(-2)!).includes('enter start'));
+    assert.ok(strip(menuView().lines.at(-2)!).includes('enter back'));
     const stored = toStored(DEFAULTS);
     const typing = write(createMenu(stored, stored), '5');
     assert.ok(strip(menuView({ menu: typing }).lines.at(-2)!).includes('esc cancel'));
@@ -452,6 +453,72 @@ describe('the menu', () => {
     const narrow = menuLayout(34, 40, FIELDS.length)!;
     for (const line of menuView({ tier: narrow }).lines) {
       assert.equal(strip(line).length, COMPACT.width);
+    }
+  });
+});
+
+const homeView = (overrides: Partial<Parameters<typeof renderHome>[0]> = {}) =>
+  renderHome({
+    home: createHome(),
+    mode: 'truecolor' as const,
+    glyphs: UNICODE,
+    plan: '4 rounds of 25 min',
+    tier: homeLayout(80, 40)!,
+    ...overrides,
+  });
+
+describe('homeLayout', () => {
+  it('draws the big name when there is room for it', () => {
+    assert.deepEqual(homeLayout(80, 40), { width: FULL.width, height: 14, logo: 2 });
+  });
+
+  it('squashes the name on a narrow terminal, where the big one does not fit', () => {
+    assert.equal(homeLayout(36, 40)?.logo, 1);
+  });
+
+  it('drops the name before it drops the list', () => {
+    assert.equal(homeLayout(80, 12)?.logo, 1);
+    assert.equal(homeLayout(80, 8)?.logo, null);
+    assert.equal(homeLayout(80, 5), null);
+    assert.equal(homeLayout(20, 40), null);
+  });
+
+  it('is as tall as what it draws, at every size', () => {
+    for (const [columns, rows] of [[80, 40], [36, 40], [80, 12], [80, 8]] as const) {
+      const tier = homeLayout(columns, rows)!;
+      const lines = homeView({ tier }).lines;
+      assert.equal(lines.length, tier.height, `${columns}x${rows}`);
+      for (const line of lines) assert.equal(strip(line).length, tier.width, `${columns}x${rows}`);
+    }
+  });
+});
+
+describe('the start screen', () => {
+  it('lists the three choices and points at start', () => {
+    const lines = homeView().lines.map(strip);
+    for (const item of ['start', 'settings', 'quit']) {
+      assert.ok(lines.some((l) => l.includes(item)), item);
+    }
+    const marked = lines.filter((l) => l.includes('›'));
+    assert.equal(marked.length, 1);
+    assert.ok(marked[0]?.includes('start'));
+  });
+
+  it('moves the pointer with the selection', () => {
+    const lines = homeView({ home: cycle(createHome(), -1) }).lines.map(strip);
+    const marked = lines.filter((l) => l.includes('›'));
+    assert.ok(marked[0]?.includes('quit'), marked.join('\n'));
+  });
+
+  it('puts the plan in the header', () => {
+    assert.ok(strip(homeView().lines[0]!).includes('4 rounds of 25 min'));
+  });
+
+  it('gives each choice a hit box on its own row', () => {
+    const frame = homeView();
+    assert.deepEqual(frame.hits.map((h) => h.id), ['start', 'settings', 'quit']);
+    for (const hit of frame.hits) {
+      assert.ok(strip(frame.lines[hit.row]!).slice(hit.col, hit.col + hit.width).includes(hit.id));
     }
   });
 });

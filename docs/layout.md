@@ -87,10 +87,19 @@ nothing to gain from big digits. It borrows the two box widths and then takes
 as many rows as the terminal will give it, scrolling the field list if that
 isn't all of them.
 
+The start menu does the same with the widths and picks its height from three
+fixed options. The name drawn big with blank rows around it, the name squashed
+to scale one, or just the list. Big digits at scale two are 34 columns, which
+doesn't fit inside the 34 column box, so a narrow terminal gets the squashed
+name even when it has the height for the other one.
+
 ## The digit font
 
-`digits.ts` is a 5 row bitmap font with eleven characters in it, the ten digits
-and a colon, which is all a clock ever needs.
+`digits.ts` is a 5 row bitmap font with fourteen characters in it. The ten
+digits and a colon, which is all a clock ever needs, and then `P`, `O` and `M`,
+which is all the start menu needs to spell the name. The `M` is five cells wide
+where everything else is three, because a three cell `M` is an `H` with
+ideas.
 
 ```ts
 const FONT: Record<string, readonly string[]> = {

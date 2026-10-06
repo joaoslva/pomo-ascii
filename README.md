@@ -38,9 +38,9 @@ Or keep it around:
 npm install -g pomo-ascii
 ```
 
-Then just `pomo`. That opens a settings menu where you can set the lengths and
-everything else, and `enter` starts the timer. If you already know what you
-want, pass a flag and it skips straight to the clock.
+Then just `pomo`. That opens a little start menu, where you can start the
+timer or go into the settings first and set the lengths and everything else. If
+you already know what you want, pass a flag and it skips straight to the clock.
 
 ```bash
 pomo --work 50 --break 10 --rounds 3

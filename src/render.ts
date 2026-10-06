@@ -12,14 +12,15 @@
  * derived from the same numbers that positioned the labels, so the mouse
  * targets cannot drift out of sync with what's on screen.
  *
- * Two screens live here, the timer and the settings menu. They share the box,
- * the header and the button bar, and they differ in what a hit box points at,
- * which is why `Hit` is generic over its id.
+ * Three screens live here, the start screen, the timer and the settings menu.
+ * They share the box and the header, and they differ in what a hit box points
+ * at, which is why `Hit` is generic over its id.
  */
 
 import { bigText, bigTextWidth, DIGIT_HEIGHT, type Scale } from './digits.ts';
 import { bold, dim, fg, invert, phaseColor, type ColorMode, type Rgb } from './gradient.ts';
 import type { GlyphSet } from './glyphs.ts';
+import type { Home, HomeItem } from './home.ts';
 import { display, type Field, type Menu } from './menu.ts';
 import {
   completedWorkPhases,
@@ -491,8 +492,6 @@ export type MenuView = {
   mode: ColorMode;
   glyphs: GlyphSet;
   hovered: MenuButtonId | null;
-  /** `start` before the timer has begun, `back` once it's running. */
-  primary: 'start' | 'back';
   /** A word for the header, for saying `saved` and for admitting `not saved`. */
   note: string | null;
   tier: MenuTier;
@@ -607,7 +606,7 @@ export function renderMenu(view: MenuView): Frame<MenuTarget> {
   // is the only thing here you can't undo by walking away.
   const bar = buttonBar<MenuButtonId>({
     buttons: [
-      { id: 'primary', label: view.primary.padEnd(5), disabled: false },
+      { id: 'primary', label: 'back', disabled: false },
       { id: 'save', label: 'save', disabled: !dirty },
       { id: 'quit', label: 'quit', disabled: false },
     ],
@@ -629,7 +628,7 @@ export function renderMenu(view: MenuView): Frame<MenuTarget> {
       ? [wide ? 'typing' : '', 'enter ok · esc cancel']
       : [
           `${g.up}${g.down} ${g.left}${g.right}`,
-          wide ? `space edit · s save · enter ${view.primary}` : `enter ${view.primary}`,
+          wide ? 'space edit · s save · enter back' : 'enter back',
         ];
   lines.push(
     border +
@@ -672,4 +671,118 @@ function valueCell(
   const padding = ' '.repeat(Math.max(0, width - shown.length));
   if (isFocused) return fg(shown, accent, mode) + padding;
   return shown + padding;
+}
+
+// ── the start screen ───────────────────────────────────────────────────────
+
+export type HomeTier = {
+  width: number;
+  height: number;
+  /** How big to draw the name, or null when there's no room to draw it. */
+  logo: Scale | null;
+};
+
+export type HomeView = {
+  home: Home;
+  mode: ColorMode;
+  glyphs: GlyphSet;
+  /** What `start` is about to do, for the header. */
+  plan: string;
+  tier: HomeTier;
+};
+
+const LOGO = 'POMO';
+
+/** Wide enough for `settings` and the marker in front of it. */
+const HOME_ITEM = 10;
+
+/**
+ * Same widths as the other two screens, so moving between them doesn't make
+ * the box jump sideways. The height picks how much of a welcome you get: the
+ * big name with room to breathe, the squashed name, or just the list.
+ */
+export function homeLayout(columns: number, rows: number): HomeTier | null {
+  const width =
+    columns >= FULL.width ? FULL.width : columns >= COMPACT.width ? COMPACT.width : 0;
+  if (width === 0) return null;
+
+  // Borders and hints take three rows and the list three more. The name brings
+  // a blank row under it, and the big one two more for breathing.
+  const options: HomeTier[] = [
+    { width, height: 6 + 1 + DIGIT_HEIGHT + 2, logo: 2 },
+    { width, height: 6 + 1 + DIGIT_HEIGHT, logo: 1 },
+    { width, height: 6, logo: null },
+  ];
+  for (const option of options) {
+    const fits = option.logo === null || bigTextWidth(LOGO, option.logo) <= width - 2;
+    if (fits && rows >= option.height) return option;
+  }
+  return null;
+}
+
+export function renderHome(view: HomeView): Frame<HomeItem> {
+  const { home, mode, glyphs: g, tier } = view;
+  const inner = tier.width - 2;
+  const accent = phaseColor('work', 0.5);
+  const border = dim(g.vertical, mode);
+  const roomy = tier.logo === 2;
+
+  const lines: string[] = [];
+  const hits: Hit<HomeItem>[] = [];
+
+  const row = (styled: string, plainWidth: number): string => {
+    const [left, right] = padCenter(' '.repeat(plainWidth), inner);
+    return border + ' '.repeat(left) + styled + ' '.repeat(right) + border;
+  };
+  const blank = (): string => border + ' '.repeat(inner) + border;
+
+  lines.push(header(view.plan, tier.width, g, mode, accent));
+  if (roomy) lines.push(blank());
+
+  // ── the name ─────────────────────────────────────────────────────────────
+  // Coloured a column at a time, so it wears the whole focus gradient the way
+  // a progress bar does by the end of a round.
+  if (tier.logo !== null) {
+    const width = bigTextWidth(LOGO, tier.logo);
+    for (const line of bigText(LOGO, g.digit, tier.logo)) {
+      let styled = '';
+      for (let i = 0; i < line.length; i++) {
+        const char = line[i]!;
+        styled += char === ' ' ? char : fg(char, phaseColor('work', i / (width - 1)), mode);
+      }
+      lines.push(row(styled, width));
+    }
+    lines.push(blank());
+  }
+
+  // ── the list ─────────────────────────────────────────────────────────────
+  // A left-aligned block in the middle, rather than each word centred on its
+  // own, so the marker moves straight up and down instead of zigzagging.
+  const [left] = padCenter(' '.repeat(HOME_ITEM), inner);
+  home.items.forEach((item, index) => {
+    const isFocused = index === home.index;
+    const marker = isFocused ? fg(g.right, accent, mode) : ' ';
+    const label = item.padEnd(HOME_ITEM - 2);
+    const styled = isFocused ? bold(fg(label, accent, mode), mode) : dim(label, mode);
+    hits.push({ id: item, row: lines.length, col: 1 + left, width: HOME_ITEM });
+    lines.push(row(marker + ' ' + styled, HOME_ITEM));
+  });
+
+  if (roomy) lines.push(blank());
+
+  // ── hints ────────────────────────────────────────────────────────────────
+  const wide = tier.width === FULL.width;
+  const keys = `${g.up}${g.down}`;
+  const help = wide ? 'enter go · m settings · q quit' : 'enter go';
+  lines.push(
+    border +
+      ' ' +
+      endToEnd(dim(keys, mode), keys.length, dim(help, mode), help.length, inner - 2) +
+      ' ' +
+      border,
+  );
+
+  lines.push(dim(g.bottomLeft + g.horizontal.repeat(inner) + g.bottomRight, mode));
+
+  return { lines, hits };
 }

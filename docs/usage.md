@@ -7,8 +7,35 @@ npx pomo-ascii          # no install
 npm install -g pomo-ascii && pomo
 ```
 
-A bare `pomo` opens the [settings menu](settings.md) first, so you can set the
-lengths without remembering a single flag. Press `enter` and the timer starts.
+A bare `pomo` opens a start menu first, with the name drawn big and three
+things to pick from.
+
+```
+┌─ pomo ────────────── 4 rounds of 25 min ─┐
+│                                          │
+│    ██████  ██████  ██      ██  ██████    │
+│    ██  ██  ██  ██  ████  ████  ██  ██    │
+│    ██████  ██  ██  ██  ██  ██  ██  ██    │
+│    ██      ██  ██  ██      ██  ██  ██    │
+│    ██      ██████  ██      ██  ██████    │
+│                                          │
+│                › start                   │
+│                  settings                │
+│                  quit                    │
+│                                          │
+│ ↑↓        enter go · m settings · q quit │
+└──────────────────────────────────────────┘
+```
+
+`enter` on `start` begins the session, and `settings` takes you to the
+[settings menu](settings.md) so you can set the lengths without remembering a
+single flag. Going back from there lands you here again, with the header
+updated to whatever you changed. The arrows and `tab` move the pointer, `m`
+jumps straight to the settings, `q` quits, and the mouse works too, the pointer
+follows it and a click picks.
+
+On a short terminal the name gets squashed and then dropped, the list always
+stays. The whole thing needs 34 columns and 6 rows.
 
 Pass any flag and the menu gets out of your way, because you have already said
 what you want:

@@ -7,7 +7,7 @@ it.
 
 ## The menu
 
-A bare `pomo` opens it. Pressing `m` while the timer runs opens it again.
+Pick `settings` on the start menu, or press `m` there or while the timer runs.
 
 ```
 ┌─ pomo ──────────────────────── settings ─┐
@@ -22,12 +22,12 @@ A bare `pomo` opens it. Pressing `m` while the timer runs opens it again.
 │  glyphs      ‹ unicode                 › │
 │  mouse       ‹ on                      › │
 │  title bar   ‹ on                      › │
-│  menu first  ‹ on                      › │
+│  start menu  ‹ on                      › │
 │  focus text    Focus done, take a bre…   │
 │  break text    Break over, back to it    │
 │  done text     Session complete          │
-│       [ start ] [ save ] [ quit ]        │
-│ ↑↓ ‹›  space edit · s save · enter start │
+│        [ back ] [ save ] [ quit ]        │
+│ ↑↓ ‹›   space edit · s save · enter back │
 └──────────────────────────────────────────┘
 ```
 
@@ -38,7 +38,7 @@ A bare `pomo` opens it. Pressing `m` while the timer runs opens it again.
 | `shift` + `←` `→` | change a number by five at a time |
 | `0`-`9` | type a number straight in, over whatever was there |
 | `space` | edit a message, or flip a switch |
-| `enter` | start the timer, or go back to it |
+| `enter` | go back to wherever you came from |
 | `esc` | same, and it cancels an edit while you're typing one |
 | `s` | save to the config file |
 | `q` | quit |
@@ -56,13 +56,14 @@ The list scrolls when the terminal is too short for all of it, with a `↑` or a
 columns and 7 rows at an absolute minimum. Below that it says so rather than
 drawing you half a list.
 
-`menu first` is the menu asking whether it should keep opening. Turn it off and
-a bare `pomo` goes straight to the clock, and `--menu` still brings this screen
-back for a single run.
+`start menu` is whether a bare `pomo` opens on the start menu at all. Turn it
+off and you go straight to the clock, and `--menu` still brings the start menu
+back for a single run. The key in the config file is still called `menu`, since
+renaming it would quietly undo the setting for everyone who already had one.
 
 ## Saving, or not
 
-`start` and `back` take the values for this run and leave the file alone.
+`back` takes the values for this run and leaves the file alone.
 `save` writes them. That split is on purpose, since trying out a 50 minute
 block is not the same act as deciding that you are a 50 minute person now.
 

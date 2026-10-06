@@ -1,6 +1,7 @@
 /**
- * A tiny 5-row bitmap font. Only the ten digits and a colon, which is all a
- * clock ever needs.
+ * A tiny 5-row bitmap font. The ten digits and a colon, which is all a clock
+ * ever needs, plus the three letters it takes to spell the name on the start
+ * screen. Anything else draws as a space.
  *
  * Each cell is drawn `scale` characters wide. Terminal cells are tall, so 2 is
  * the shape this font was drawn for; 1 is the squashed version, used when the
@@ -27,6 +28,10 @@ const FONT: Record<string, readonly string[]> = {
   '8': ['###', '# #', '###', '# #', '###'],
   '9': ['###', '# #', '###', '  #', '###'],
   ':': [' ', '#', ' ', '#', ' '],
+  // An M needs five cells to read as one. Three gives you an H with ideas.
+  'P': ['###', '# #', '###', '#  ', '#  '],
+  'O': ['###', '# #', '# #', '# #', '###'],
+  'M': ['#   #', '## ##', '# # #', '#   #', '#   #'],
   ' ': [' ', ' ', ' ', ' ', ' '],
 };
 

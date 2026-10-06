@@ -39,7 +39,7 @@ export const FIELDS: readonly Field[] = [
   { kind: 'flag', key: 'ascii', label: 'glyphs', on: 'ascii', off: 'unicode' },
   { kind: 'flag', key: 'mouse', label: 'mouse', on: 'on', off: 'off' },
   { kind: 'flag', key: 'title', label: 'title bar', on: 'on', off: 'off' },
-  { kind: 'flag', key: 'menu', label: 'menu first', on: 'on', off: 'off' },
+  { kind: 'flag', key: 'menu', label: 'start menu', on: 'on', off: 'off' },
   { kind: 'text', key: 'focus', label: 'focus text' },
   { kind: 'text', key: 'break', label: 'break text' },
   { kind: 'text', key: 'done', label: 'done text' },

@@ -11,6 +11,7 @@ hundred lines you can read beats a package you can't.
 | --- | --- |
 | `session.ts` | the timer, as pure functions over a plain object |
 | `menu.ts` | the settings menu model, same idea |
+| `home.ts` | the start menu model, which is three items and a pointer |
 | `render.ts` | state in, frame out, plus the hit boxes for anything clickable |
 | `gradient.ts` | HSL interpolation, ANSI escape codes, terminal capability detection |
 | `audio.ts` | synthesises a WAV from a list of notes and finds something to play it |
@@ -113,19 +114,26 @@ function hitTest<Id>(boxes: readonly Hit<Id>[], row: number, col: number): Id | 
 }
 ```
 
-`Hit` is generic over its id because the two screens point at different things.
+`Hit` is generic over its id because the screens point at different things.
 The timer's hits carry a `ButtonId`, the menu's carry a `MenuTarget` saying
-which row and which part of it.
+which row and which part of it, and the start menu's carry the item itself.
 
-## Two screens
+## Three screens
 
-The app has a timer and a settings menu, and the whole of that fact is one
-nullable variable in `cli.ts`. When `menu` is null you're on the timer.
-Painting, keys and the mouse each check it once and go their separate ways.
+The app has a start menu, a timer and a settings menu, and that fact is two
+nullable variables in `cli.ts`. `home` is non-null until you press start and
+never again after that. `menu` is non-null while the settings are open, on top
+of whichever of the other two you came from, so going back from the settings
+needs no memory of where back is. Painting, keys and the mouse each check
+`menu`, then `home`, and go their separate ways.
 
-The clock keeps running underneath either screen. A break you spend changing
-settings is still a break, and the phase change still fires its jingle while
-you're in there.
+A session exists from the first frame, it just isn't running while the start
+menu is up. Pressing start builds a fresh one from whatever the settings say by
+then, so there is nothing to reshape.
+
+Once it has started the clock keeps running underneath the settings. A break
+you spend changing them is still a break, and the phase change still fires its
+jingle while you're in there.
 
 `menu.ts` is modelled the same way as the session. A list of field
 descriptions, an index saying which one has focus, and a draft string that is

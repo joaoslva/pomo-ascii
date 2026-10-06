@@ -27,7 +27,7 @@ export type Config = {
   title: boolean;
   /** Ask the desktop to show a notification when a phase ends. */
   notify: boolean;
-  /** Open the settings menu on a bare `pomo`, rather than starting the timer. */
+  /** Open the start menu on a bare `pomo`, rather than starting the timer. */
   menu: boolean;
   messages: Messages;
   /** What you're working on. Shown on the status row; per-run, so flag only. */
@@ -80,7 +80,7 @@ export const HELP = `
         --no-notify          don't send desktop notifications
         --no-ascii           --no-strict          undo the above
 
-        --menu               open the settings menu, even alongside flags
+        --menu               open the start menu, even alongside flags
         --no-menu            start the timer straight away
         --config             print the path of the config file
     -h, --help               show this
@@ -89,17 +89,17 @@ export const HELP = `
   Config
     Preferences are read from ~/.config/pomo/config.json, written with the
     defaults the first time pomo runs. Flags win over the file for one run.
-    A bare \`pomo\` opens the settings menu; passing any flag skips it.
+    A bare \`pomo\` opens the start menu; passing any flag skips it.
 
   Controls
     click a button, or:
     space  pause / resume     s  skip phase
     r      reset session      m  settings
-    q      quit               (ctrl-c also works)
+    q      back to the menu   (ctrl-c quits)
 
-  In the menu
+  In the settings
     up/down  move             left/right  change
-    space    edit a value     enter       start
+    space    edit a value     enter       back
 `;
 
 class ConfigError extends Error {}

@@ -4,10 +4,12 @@
  * process lifetime. This is the only file that knows the app has a clock
  * ticking and a way to exit.
  *
- * There are two screens, the timer and the settings menu, and this file is
- * where that fact lives: `menu` being non-null is the whole of it. The clock
- * keeps running underneath either one, because a break you spend changing
- * settings is still a break.
+ * There are three screens, the start screen, the timer and the settings menu,
+ * and this file is where that fact lives: `home` is non-null until the timer
+ * has been started, and `menu` is non-null while the settings sit on top of
+ * whichever of the other two you came from. Once the timer is going the clock
+ * keeps running under the settings, because a break you spend changing them is
+ * still a break.
  */
 
 import { readFileSync } from 'node:fs';
@@ -16,6 +18,7 @@ import { Chime, JINGLES } from './audio.ts';
 import { DEFAULTS, durations, HELP, parseConfig, type Config } from './config.ts';
 import { detectColorMode, type ColorMode } from './gradient.ts';
 import { glyphSet, type GlyphSet } from './glyphs.ts';
+import { createHome, cycle, select, selected, type Home, type HomeItem } from './home.ts';
 import {
   activate,
   backspace,
@@ -33,10 +36,12 @@ import {
 import { Notifications } from './notify.ts';
 import {
   COMPACT,
+  homeLayout,
   layout,
   MENU_CHROME,
   menuLayout,
   render,
+  renderHome,
   renderMenu,
   tooSmall,
   type ButtonId,
@@ -71,6 +76,9 @@ const TICK_MS = 200;
 
 /** The smallest menu worth drawing: two columns short of the compact box. */
 const MENU_MIN = { width: COMPACT.width, height: MENU_CHROME + 3 };
+
+/** The start screen with the name left off, which is as small as it goes. */
+const HOME_MIN = { width: COMPACT.width, height: 6 };
 
 /** The three things that get announced, which is also how the jingles are keyed. */
 type Event = 'focus' | 'break' | 'done';
@@ -139,21 +147,29 @@ function main(): void {
   /** What the file holds, so the menu can tell you what it hasn't saved yet. */
   let savedValues: Stored = { ...toStored(DEFAULTS), ...stored };
 
-  // The menu, when it's open, and whether the timer has been started at all —
-  // which is the difference between a `start` button and a `back` one.
+  // The start screen until the timer starts, and the settings when they're open.
+  let home: Home | null = parsed.menu ? createHome() : null;
   let menu: Menu | null = null;
-  let started = !parsed.menu;
   let note: string | null = null;
 
   // A session exists from the first frame either way. It just doesn't run
-  // until the menu is out of the way, so the clock sits at its full length.
-  let session: Session = createSession(buildPhases(durations(config)), Date.now(), started);
-  if (parsed.menu) menu = openMenu();
+  // while the start screen is up, and gets built again from whatever the
+  // settings say by the time you press start.
+  let session: Session = createSession(buildPhases(durations(config)), Date.now(), !home);
 
   let hovered: ButtonId | null = null;
   let menuHovered: MenuButtonId | null = null;
   let hits: Hit[] = [];
   let menuHits: Hit<MenuTarget>[] = [];
+  let homeHits: Hit<HomeItem>[] = [];
+
+  // Quit on the timer goes back to the start menu when that's where the run
+  // began. Someone who typed `pomo -w 50` never saw it, and sending them there
+  // on the way out would be a screen to click through after all.
+  const returnHome = home !== null;
+  // What the sessions you've already walked away from add up to, so the line
+  // left behind on exit covers the whole run and not just the last of it.
+  const earlier = { rounds: 0, focusedMs: 0 };
   // Absolute, 1-based position of the frame's top-left cell. The frame is
   // centred, so this is the same arithmetic hit testing has to undo.
   let originRow = 1;
@@ -172,6 +188,10 @@ function main(): void {
     const { columns, rows } = screen.size();
     if (menu) {
       paintMenu(menu, columns, rows);
+      return;
+    }
+    if (home) {
+      paintHome(home, columns, rows);
       return;
     }
 
@@ -215,7 +235,6 @@ function main(): void {
       mode: open.values.color ? capability : 'none',
       glyphs: glyphSet(open.values.ascii),
       hovered: menuHovered,
-      primary: started ? 'back' : 'start',
       note,
       tier,
     });
@@ -224,6 +243,25 @@ function main(): void {
     originCol = center(columns, tier.width);
     screen.draw(frame.lines, originRow, originCol);
   };
+
+  const paintHome = (open: Home, columns: number, rows: number): void => {
+    const tier = homeLayout(columns, rows);
+    if (!tier) {
+      homeHits = [];
+      paintTooSmall(columns, rows, HOME_MIN);
+      return;
+    }
+
+    const frame = renderHome({ home: open, mode, glyphs, plan: plan(), tier });
+    homeHits = frame.hits;
+    originRow = center(rows, tier.height);
+    originCol = center(columns, tier.width);
+    screen.draw(frame.lines, originRow, originCol);
+  };
+
+  /** `4 rounds of 25 min`, which is what pressing start signs you up for. */
+  const plan = (): string =>
+    `${config.rounds} rounds of ${config.work} ${config.seconds ? 'sec' : 'min'}`;
 
   const paintTooSmall = (columns: number, rows: number, need?: typeof MENU_MIN): void => {
     const lines = tooSmall(columns, rows, need);
@@ -234,6 +272,7 @@ function main(): void {
   /** `24:13 · focus`, for a terminal that's behind another window. */
   const titleText = (now: number): string => {
     if (menu) return 'pomo · settings';
+    if (home) return 'pomo';
     if (isFinished(session)) return 'pomo · done';
     const clock = formatClock(remainingMs(session, now));
     const kind = currentPhase(session)?.kind;
@@ -302,9 +341,30 @@ function main(): void {
         session = restartSession(session, now);
         break;
       case 'quit':
-        shutdown();
+        leave();
         return;
     }
+    paint();
+  };
+
+  /**
+   * Back to the start menu, as if the app had just opened. Everything the timer
+   * was holding goes with it: the hover, the hit boxes, and the session itself,
+   * swapped for a stopped one so nothing keeps ticking or chiming underneath.
+   * Only the tally survives.
+   */
+  const leave = (): void => {
+    if (!returnHome) {
+      shutdown();
+      return;
+    }
+    const now = Date.now();
+    earlier.rounds += completedWorkPhases(session);
+    earlier.focusedMs += focusedMs(session, now);
+    session = createSession(buildPhases(durations(config)), now, false);
+    hovered = null;
+    hits = [];
+    home = createHome();
     paint();
   };
 
@@ -321,7 +381,7 @@ function main(): void {
     glyphs = glyphSet(config.ascii);
     screen.setMouse(config.mouse);
     screen.setTitleBar(config.title);
-    if (started) session = reshape(session, durations(config));
+    if (!home) session = reshape(session, durations(config));
   };
 
   const closeMenu = (): void => {
@@ -332,10 +392,6 @@ function main(): void {
     note = null;
     menuHovered = null;
     menuHits = [];
-    if (!started) {
-      started = true;
-      session = createSession(buildPhases(durations(config)), Date.now());
-    }
     paint();
   };
 
@@ -476,15 +532,99 @@ function main(): void {
     paint();
   };
 
+  // ── the start screen ─────────────────────────────────────────────────────
+
+  const choose = (item: HomeItem): void => {
+    switch (item) {
+      case 'start':
+        home = null;
+        homeHits = [];
+        session = createSession(buildPhases(durations(config)), Date.now());
+        break;
+      case 'settings':
+        menu = openMenu();
+        break;
+      case 'quit':
+        shutdown();
+        return;
+    }
+    paint();
+  };
+
+  const homeKey = (key: string): void => {
+    if (!home) return;
+
+    switch (key) {
+      case 'up':
+      case 'shift-tab':
+        home = cycle(home, -1);
+        break;
+      case 'down':
+      case 'tab':
+        home = cycle(home, 1);
+        break;
+      case 'enter':
+      case ' ':
+        choose(selected(home));
+        return;
+      case 'm':
+      case 'M':
+        choose('settings');
+        return;
+      case 'q':
+      case 'Q':
+      case '\x03':
+      case '\x04':
+        shutdown();
+        return;
+      default:
+        return;
+    }
+    paint();
+  };
+
+  const homeMouse = (event: MouseEvent): void => {
+    if (!home) return;
+    const target = hitTest(homeHits, event.row, event.col);
+    if (!target) return;
+
+    // Hovering moves the pointer rather than lighting up a second thing, so
+    // there's only ever one item that enter and a click would both pick.
+    if (event.kind === 'move') {
+      if (target !== selected(home)) {
+        home = select(home, target);
+        paint();
+      }
+      return;
+    }
+
+    if (event.kind === 'press' && event.button === 0) choose(target);
+  };
+
   // ── the outside world ────────────────────────────────────────────────────
 
   /** What's left behind on the real screen once the alternate one is gone. */
   const summary = (): string => {
-    const done = completedWorkPhases(session);
-    const total = totalWorkPhases(session);
-    const line = `pomo · ${done}/${total} rounds · ${formatDuration(focusedMs(session, Date.now()))} focused`;
+    const lines = [tally()];
     // Say it once, on the way out, rather than interrupting the start.
-    return created ? `${line}\nwrote a config file at ${configPath()}` : line;
+    if (created) lines.push(`wrote a config file at ${configPath()}`);
+    return lines.filter((line) => line !== '').join('\n');
+  };
+
+  /**
+   * One session gets its `2/4 rounds`. Several don't, since adding up two
+   * different targets gives you a number that isn't anybody's target. None,
+   * which is quitting straight from the start menu, gets nothing at all.
+   */
+  const tally = (): string => {
+    const now = Date.now();
+    const rounds = earlier.rounds + (home ? 0 : completedWorkPhases(session));
+    const focused = earlier.focusedMs + (home ? 0 : focusedMs(session, now));
+    const fresh = earlier.rounds === 0 && earlier.focusedMs === 0;
+
+    if (fresh && home) return '';
+    const count = fresh ? `${rounds}/${totalWorkPhases(session)}` : String(rounds);
+    return `pomo · ${count} rounds · ${formatDuration(focused)} focused`;
   };
 
   const shutdown = (): void => {
@@ -499,6 +639,10 @@ function main(): void {
   const onKey = (key: string): void => {
     if (menu) {
       menuKey(key);
+      return;
+    }
+    if (home) {
+      homeKey(key);
       return;
     }
 
@@ -521,6 +665,8 @@ function main(): void {
         break;
       case 'q':
       case 'Q':
+        act('quit');
+        break;
       case '\x03': // ctrl-c: raw mode delivers it as a byte, not a signal
       case '\x04': // ctrl-d
         shutdown();
@@ -539,6 +685,10 @@ function main(): void {
   const onMouse = (event: MouseEvent): void => {
     if (menu) {
       menuMouse(event);
+      return;
+    }
+    if (home) {
+      homeMouse(event);
       return;
     }
 

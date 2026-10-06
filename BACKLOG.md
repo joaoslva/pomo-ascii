@@ -110,6 +110,8 @@ Write the session state out on quit and offer `pomo --resume`. The model is alre
 
 ## Done
 
+- A start menu on a bare `pomo`, with start, settings and quit, so the app
+  doesn't open straight onto a form
 - Settings menu, on a bare `pomo` and on `m` while it runs, with a save button
   that writes the config file
 - Notification wording lives in the config file, editable from the menu

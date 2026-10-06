@@ -7,8 +7,41 @@ npx pomo-ascii          # no install
 npm install -g pomo-ascii && pomo
 ```
 
-A bare `pomo` opens the [settings menu](settings.md) first, so you can set the
-lengths without remembering a single flag. Press `enter` and the timer starts.
+A bare `pomo` opens a start menu first, with the name drawn big and three
+things to pick from.
+
+```
+┌─ pomo ────────────── 4 rounds of 25 min ─┐
+│                                          │
+│    ██████  ██████  ██      ██  ██████    │
+│    ██  ██  ██  ██  ████  ████  ██  ██    │
+│    ██████  ██  ██  ██  ██  ██  ██  ██    │
+│    ██      ██  ██  ██      ██  ██  ██    │
+│    ██      ██████  ██      ██  ██████    │
+│                                          │
+│                › start                   │
+│                  settings                │
+│                  quit                    │
+│                                          │
+│ ↑↓        enter go · m settings · q quit │
+└──────────────────────────────────────────┘
+```
+
+`enter` on `start` begins the session, and `settings` takes you to the
+[settings menu](settings.md) so you can set the lengths without remembering a
+single flag. Going back from there lands you here again, with the header
+updated to whatever you changed. The arrows and `tab` move the pointer, `m`
+jumps straight to the settings, `q` quits, and the mouse works too, the pointer
+follows it and a click picks.
+
+Quitting the timer brings you back here rather than closing the app, with a
+fresh session waiting behind `start`, so doing another round of rounds doesn't
+mean launching pomo again. `ctrl-c` still leaves from anywhere. When you do
+leave, the line pomo prints adds up every session you ran, not just the last.
+If you started with flags you never saw this menu, and `q` just quits.
+
+On a short terminal the name gets squashed and then dropped, the list always
+stays. The whole thing needs 34 columns and 6 rows.
 
 Pass any flag and the menu gets out of your way, because you have already said
 what you want:
@@ -44,7 +77,7 @@ countable and get dropped, leaving the `round 3/20` text to do the work.
 | `s` | skip to the next phase |
 | `r` | reset the whole session |
 | `m` | open the settings menu |
-| `q` | quit, and so does `ctrl-c` |
+| `q` | back to the start menu, or quit if you never saw it |
 
 Every button on screen is clickable, and it lights up when you hover it. Reset
 means the whole session, not the phase you are in, because that is what reset

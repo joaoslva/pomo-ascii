@@ -162,6 +162,14 @@ function main(): void {
   let hits: Hit[] = [];
   let menuHits: Hit<MenuTarget>[] = [];
   let homeHits: Hit<HomeItem>[] = [];
+
+  // Quit on the timer goes back to the start menu when that's where the run
+  // began. Someone who typed `pomo -w 50` never saw it, and sending them there
+  // on the way out would be a screen to click through after all.
+  const returnHome = home !== null;
+  // What the sessions you've already walked away from add up to, so the line
+  // left behind on exit covers the whole run and not just the last of it.
+  const earlier = { rounds: 0, focusedMs: 0 };
   // Absolute, 1-based position of the frame's top-left cell. The frame is
   // centred, so this is the same arithmetic hit testing has to undo.
   let originRow = 1;
@@ -333,9 +341,30 @@ function main(): void {
         session = restartSession(session, now);
         break;
       case 'quit':
-        shutdown();
+        leave();
         return;
     }
+    paint();
+  };
+
+  /**
+   * Back to the start menu, as if the app had just opened. Everything the timer
+   * was holding goes with it: the hover, the hit boxes, and the session itself,
+   * swapped for a stopped one so nothing keeps ticking or chiming underneath.
+   * Only the tally survives.
+   */
+  const leave = (): void => {
+    if (!returnHome) {
+      shutdown();
+      return;
+    }
+    const now = Date.now();
+    earlier.rounds += completedWorkPhases(session);
+    earlier.focusedMs += focusedMs(session, now);
+    session = createSession(buildPhases(durations(config)), now, false);
+    hovered = null;
+    hits = [];
+    home = createHome();
     paint();
   };
 
@@ -576,13 +605,26 @@ function main(): void {
 
   /** What's left behind on the real screen once the alternate one is gone. */
   const summary = (): string => {
-    // Leaving from the start screen, there's nothing to sum up.
-    if (home) return created ? `wrote a config file at ${configPath()}` : '';
-    const done = completedWorkPhases(session);
-    const total = totalWorkPhases(session);
-    const line = `pomo · ${done}/${total} rounds · ${formatDuration(focusedMs(session, Date.now()))} focused`;
+    const lines = [tally()];
     // Say it once, on the way out, rather than interrupting the start.
-    return created ? `${line}\nwrote a config file at ${configPath()}` : line;
+    if (created) lines.push(`wrote a config file at ${configPath()}`);
+    return lines.filter((line) => line !== '').join('\n');
+  };
+
+  /**
+   * One session gets its `2/4 rounds`. Several don't, since adding up two
+   * different targets gives you a number that isn't anybody's target. None,
+   * which is quitting straight from the start menu, gets nothing at all.
+   */
+  const tally = (): string => {
+    const now = Date.now();
+    const rounds = earlier.rounds + (home ? 0 : completedWorkPhases(session));
+    const focused = earlier.focusedMs + (home ? 0 : focusedMs(session, now));
+    const fresh = earlier.rounds === 0 && earlier.focusedMs === 0;
+
+    if (fresh && home) return '';
+    const count = fresh ? `${rounds}/${totalWorkPhases(session)}` : String(rounds);
+    return `pomo · ${count} rounds · ${formatDuration(focused)} focused`;
   };
 
   const shutdown = (): void => {
@@ -623,6 +665,8 @@ function main(): void {
         break;
       case 'q':
       case 'Q':
+        act('quit');
+        break;
       case '\x03': // ctrl-c: raw mode delivers it as a byte, not a signal
       case '\x04': // ctrl-d
         shutdown();

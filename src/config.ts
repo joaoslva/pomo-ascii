@@ -95,7 +95,7 @@ export const HELP = `
     click a button, or:
     space  pause / resume     s  skip phase
     r      reset session      m  settings
-    q      quit               (ctrl-c also works)
+    q      back to the menu   (ctrl-c quits)
 
   In the settings
     up/down  move             left/right  change

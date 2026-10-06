@@ -34,6 +34,12 @@ updated to whatever you changed. The arrows and `tab` move the pointer, `m`
 jumps straight to the settings, `q` quits, and the mouse works too, the pointer
 follows it and a click picks.
 
+Quitting the timer brings you back here rather than closing the app, with a
+fresh session waiting behind `start`, so doing another round of rounds doesn't
+mean launching pomo again. `ctrl-c` still leaves from anywhere. When you do
+leave, the line pomo prints adds up every session you ran, not just the last.
+If you started with flags you never saw this menu, and `q` just quits.
+
 On a short terminal the name gets squashed and then dropped, the list always
 stays. The whole thing needs 34 columns and 6 rows.
 
@@ -71,7 +77,7 @@ countable and get dropped, leaving the `round 3/20` text to do the work.
 | `s` | skip to the next phase |
 | `r` | reset the whole session |
 | `m` | open the settings menu |
-| `q` | quit, and so does `ctrl-c` |
+| `q` | back to the start menu, or quit if you never saw it |
 
 Every button on screen is clickable, and it lights up when you hover it. Reset
 means the whole session, not the phase you are in, because that is what reset

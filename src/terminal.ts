@@ -99,6 +99,8 @@ export class Screen {
   #mouseEnabled = false;
   #started = false;
   #lastFrame: string | null = null;
+  /** Where the last frame sat and how tall it was, to know when to wipe. */
+  #lastShape: string | null = null;
   #lastTitle: string | null = null;
 
   constructor(options: { mouse: boolean; title?: boolean }) {
@@ -172,7 +174,13 @@ export class Screen {
     if (frame === this.#lastFrame) return;
     this.#lastFrame = frame;
 
-    let out = '';
+    // Each row only clears to its own right, which is enough while one frame
+    // replaces another of the same shape. Switching screens changes the shape,
+    // and then whatever the old frame had outside the new one would stay put.
+    const shape = `${originRow},${originCol},${lines.length}`;
+    let out = shape === this.#lastShape ? '' : CLEAR_SCREEN;
+    this.#lastShape = shape;
+
     for (let i = 0; i < lines.length; i++) {
       out += `${ESC}[${originRow + i};${originCol}H${CLEAR_RIGHT}${lines[i] ?? ''}`;
     }

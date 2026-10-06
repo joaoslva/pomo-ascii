@@ -56,7 +56,7 @@ Click the buttons. Or if your hands are already on the keyboard:
 | `s` | skip to the next phase |
 | `r` | reset the whole session |
 | `m` | open the settings menu |
-| `q` | quit (`ctrl-c` too) |
+| `q` | back to the start menu (`ctrl-c` quits from anywhere) |
 
 A session is `--rounds` focus blocks with a short break after each one, then a
 long break at the end to finish. The dots in the bottom corner keep count. The
